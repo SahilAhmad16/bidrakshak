@@ -35,7 +35,7 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     description: 'Mandatory valid GSTIN registration certificate and filing compliance.',
     patterns: [/\bgst\b/i, /\bgstin\b/i, /gst\s+registration/i, /gstr[- ]?3b/i, /goods\s+and\s+services\s+tax/i],
     evidencePatterns: [/\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b/, /gstin/i, /gst\s+certificate/i, /valid\s+gst/i],
-    clarityPatterns: [/copy\s+of\s+gst/i, /valid\s+gst/i, /gst\s+return/i],
+    clarityPatterns: [/copy\s+of\s+gst/i, /valid\s+gst/i, /gst\s+return/i, /gstr/i],
     weight: 12,
     mandatory: true,
     notesFound: 'Active GST registration and tax compliance verified.',
@@ -47,7 +47,7 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     category: 'Statutory',
     description: 'Valid PAN card copy and Income Tax Return (ITR) acknowledgments.',
     patterns: [/\bpan\b/i, /permanent\s+account\s+number/i, /pan\s+card/i, /income\s+tax\s+return/i, /\bitr\b/i],
-    evidencePatterns: [/\b[A-Z]{5}\d{4}[A-Z]{1}\b/, /pan\s+card/i, /income\s+tax/i, /itr[- ]?[v\d]/i],
+    evidencePatterns: [/\b[A-Z]{5}\d{4}[A-Z]{1}\b/, /pan\s+card/i, /income\s+tax/i, /itr[- ]?[v\d]/i, /pan\s+registration/i],
     clarityPatterns: [/pan\s+copy/i, /itr/i, /tax\s+clearance/i],
     weight: 10,
     mandatory: true,
@@ -59,13 +59,26 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     name: 'Company Incorporation & Legal Entity Proof',
     category: 'Statutory',
     description: 'Certificate of Incorporation, ROC registration, CIN, or Partnership Deed.',
-    patterns: [/certificate\s+of\s+incorporation/i, /incorporation/i, /\broc\b/i, /partnership\s+deed/i, /\bcin\b/i, /\bllp\b/i, /proprietorship/i],
-    evidencePatterns: [/\b[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}\b/, /certificate\s+of\s+incorporation/i, /companies\s+act/i, /registrar\s+of\s+companies/i],
+    patterns: [/certificate\s+of\s+incorporation/i, /incorporation/i, /\broc\b/i, /partnership\s+deed/i, /\bcin\b/i, /\bllp\b/i, /proprietorship/i, /legal\s+registration/i],
+    evidencePatterns: [/\b[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}\b/, /certificate\s+of\s+incorporation/i, /incorporation\s+certificate/i, /companies\s+act/i, /registrar\s+of\s+companies/i],
     clarityPatterns: [/certificate\s+of\s+incorporation/i, /registered\s+under/i],
     weight: 10,
     mandatory: true,
     notesFound: 'Valid legal entity incorporation certificate detected.',
     notesMissing: 'Certificate of Incorporation or registered legal entity proof not detected.',
+  },
+  {
+    id: 'req_emd',
+    name: 'Earnest Money Deposit (EMD) / Bid Security',
+    category: 'Financial',
+    description: 'Earnest Money Deposit (EMD) guarantee, DD, online payment, or valid MSE exemption.',
+    patterns: [/earnest\s+money/i, /\bemd\b/i, /bid\s+security/i, /security\s+deposit/i],
+    evidencePatterns: [/emd\s+(amount|guarantee|copy|receipt|exemption|deposit)/i, /\bemd\b/i, /bank\s+guarantee/i, /demand\s+draft/i, /online\s+transfer/i],
+    clarityPatterns: [/bank\s+guarantee/i, /emd\s+copy/i, /emd\s+exemption/i],
+    weight: 10,
+    mandatory: true,
+    notesFound: 'EMD guarantee copy or valid fee deposit verified.',
+    notesMissing: 'Earnest Money Deposit (EMD) proof or valid exemption not furnished.',
   },
   {
     id: 'req_msme',
@@ -84,12 +97,12 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     id: 'req_epfo_esic',
     name: 'EPFO & ESIC Labor Statutory Compliance',
     category: 'Statutory',
-    description: 'Valid EPFO and ESIC establishment registration with recent contribution proof.',
-    patterns: [/\bepfo\b/i, /\besic\b/i, /provident\s+fund/i, /employee\s+state\s+insurance/i, /ecr\s+challan/i],
+    description: 'Valid EPFO and ESIC establishment registration with contribution proof.',
+    patterns: [/\bepfo\b/i, /\besic\b/i, /provident\s+fund/i, /employee\s+state\s+insurance/i, /ecr\s+challan/i, /labor\s+compliance/i],
     evidencePatterns: [/epf\s+code/i, /esic\s+code/i, /provident\s+fund/i, /ecr/i, /challan/i],
     clarityPatterns: [/ecr/i, /monthly\s+challan/i],
     weight: 8,
-    mandatory: true,
+    mandatory: false,
     notesFound: 'Labor statutory compliance (EPF/ESIC) detected with payment records.',
     notesMissing: 'EPFO or ESIC establishment registration code/challan not identified.',
   },
@@ -97,14 +110,27 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     id: 'req_turnover',
     name: 'Annual Financial Turnover & CA Audit',
     category: 'Financial',
-    description: 'Audited balance sheets, profit & loss, and CA turnover certificate with valid UDIN.',
-    patterns: [/turnover/i, /balance\s+sheet/i, /profit\s+(and|&)\s+loss/i, /annual\s+turnover/i, /audited/i, /financial\s+capacity/i],
-    evidencePatterns: [/turnover\s+of\s+(inr|rs\.?)\s*[\d,.]+/i, /\budin[:\s]*\d{18}\b/i, /ca\s+certified/i, /audited\s+balance\s+sheet/i, /crore[s]?|lakh[s]?/i],
+    description: 'Audited balance sheets, turnover capability, and CA turnover certificate with valid UDIN.',
+    patterns: [/turnover/i, /annual\s+turnover/i, /financial\s+turnover/i, /financial\s+capacity/i],
+    evidencePatterns: [/turnover\s+(of|certificate|not\s+less)/i, /\budin[:\s]*\d{18}\b/i, /ca\s+certified/i, /crore[s]?|lakh[s]?/i],
     clarityPatterns: [/last\s+3\s+years/i, /audited\s+financial/i, /udin/i],
     weight: 12,
     mandatory: true,
     notesFound: 'Financial turnover capability verified with audited financial documentation.',
     notesMissing: 'Audited financial statements or CA turnover certificate missing.',
+  },
+  {
+    id: 'req_balance_sheet',
+    name: 'Audited Balance Sheets & Financial Statements',
+    category: 'Financial',
+    description: 'Audited balance sheets and profit & loss statements for the last 3 financial years.',
+    patterns: [/balance\s+sheet/i, /audited\s+balance/i, /profit\s+(and|&)\s+loss/i, /audited\s+financial\s+statements?/i],
+    evidencePatterns: [/audited\s+balance\s+sheet/i, /balance\s+sheets/i, /financial\s+statements/i],
+    clarityPatterns: [/3\s+years/i, /audited/i],
+    weight: 8,
+    mandatory: true,
+    notesFound: 'Audited balance sheets and financial statements verified.',
+    notesMissing: 'Audited balance sheets or complete financial statements missing.',
   },
   {
     id: 'req_solvency',
@@ -128,7 +154,7 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     evidencePatterns: [/manufacturer\s+authori[sz]ation/i, /\bmaf\b/i, /authori[sz]ed\s+partner/i, /official\s+oem/i],
     clarityPatterns: [/tender[- ]specific/i, /original\s+equipment\s+manufacturer/i],
     weight: 10,
-    mandatory: true,
+    mandatory: false,
     notesFound: 'Tender-specific OEM Manufacturer Authorization Form verified.',
     notesMissing: 'Tender-specific OEM Authorization (MAF) not detected in submittals.',
   },
@@ -137,8 +163,8 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     name: 'Past Experience & Work Completion Orders',
     category: 'Technical',
     description: 'Completion certificates and client work orders demonstrating past project execution.',
-    patterns: [/work\s+order/i, /completion\s+certificate/i, /past\s+experience/i, /similar\s+(work|project)/i, /satisfactory\s+performance/i],
-    evidencePatterns: [/completion\s+certificate/i, /work\s+order\s+no/i, /successfully\s+completed/i, /client\s+certificate/i],
+    patterns: [/work\s+order/i, /completion\s+certificate/i, /past\s+(work\s+)?experience/i, /similar\s+(work|project)/i, /satisfactory\s+performance/i],
+    evidencePatterns: [/completion\s+certificate/i, /work\s+order\s+no/i, /work\s+experience/i, /successfully\s+completed/i, /client\s+certificate/i],
     clarityPatterns: [/completion\s+certificate/i, /similar\s+work/i],
     weight: 10,
     mandatory: true,
@@ -150,8 +176,8 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     name: 'Quality Certifications (ISO / BIS / CE)',
     category: 'Technical',
     description: 'Valid ISO (e.g. ISO 9001 / ISO 27001) or BIS certifications.',
-    patterns: [/\biso\s*(9001|27001|14001|20000)\b/i, /\bbis\b/i, /\bcmmi\b/i, /quality\s+management/i],
-    evidencePatterns: [/iso\s*9001/i, /iso\s*27001/i, /certified\s+by/i, /accredited/i],
+    patterns: [/\biso\s*(9001|27001|14001|20000)\b/i, /\bbis\b/i, /\bcmmi\b/i, /quality\s+certifications?/i, /quality\s+management/i],
+    evidencePatterns: [/iso\s*9001/i, /iso\s*27001/i, /certified\s+by/i, /accredited/i, /quality\s+certificate/i],
     clarityPatterns: [/valid\s+iso/i, /accreditation/i],
     weight: 6,
     mandatory: false,
@@ -159,12 +185,25 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     notesMissing: 'Quality accreditation (ISO/BIS) certificates not provided.',
   },
   {
+    id: 'req_tech_specs',
+    name: 'Technical Specifications & Standards Compliance',
+    category: 'Technical',
+    description: 'Clause-by-clause technical specifications compliance matrix.',
+    patterns: [/technical\s+spec(ification)?s?/i, /compliance\s+matrix/i, /adherence\s+to\s+technical/i, /technical\s+standards/i],
+    evidencePatterns: [/technical\s+spec/i, /technical\s+compliance/i, /specification\s+compliance/i, /100%\s+adherence/i],
+    clarityPatterns: [/compliance\s+matrix/i, /annexure/i],
+    weight: 10,
+    mandatory: true,
+    notesFound: 'Technical specifications compliance matrix verified without unapproved deviations.',
+    notesMissing: 'Technical compliance matrix not provided or deviations unresolved.',
+  },
+  {
     id: 'req_local_content',
     name: 'Make in India / Local Content Declaration',
     category: 'Contractual',
     description: 'Self-certification affidavit declaring local content percentage under PPP-MII policy.',
-    patterns: [/make\s+in\s+india/i, /local\s+content/i, /class[- ]?i\s+local/i, /percentage\s+of\s+local/i, /ppp[- ]?mii/i],
-    evidencePatterns: [/local\s+content\s+declaration/i, /class[- ]?i\s+local\s+supplier/i, /local\s+content\s+percentage/i, /minimum\s+\d+%\s+local/i],
+    patterns: [/make\s+in\s+india/i, /local\s+content/i, /class[- ]?i\s+local/i, /percentage\s+of\s+local/i, /ppp[- ]?mii/i, /local\s+supplier/i],
+    evidencePatterns: [/local\s+content\s+declaration/i, /class[- ]?i\s+local\s+supplier/i, /local\s+content\s+percentage/i, /minimum\s+\d+%\s+local/i, /make\s+in\s+india/i],
     clarityPatterns: [/self[- ]declaration/i, /percentage/i],
     weight: 8,
     mandatory: true,
@@ -177,7 +216,7 @@ const TENDER_REQUIREMENT_PATTERNS: RequirementPatternDef[] = [
     category: 'Integrity',
     description: 'Notarized undertaking certifying bidder is not debarred or blacklisted by any Govt entity.',
     patterns: [/not\s+blacklisted/i, /non[- ]?blacklisting/i, /not\s+debarred/i, /non[- ]?debarment/i, /integrity\s+pact/i, /undertaking/i],
-    evidencePatterns: [/not\s+blacklisted/i, /not\s+debarred/i, /non[- ]?blacklisting\s+undertaking/i, /notarized\s+affidavit/i],
+    evidencePatterns: [/not\s+blacklisted/i, /not\s+debarred/i, /non[- ]?blacklisting\s+undertaking/i, /notarized\s+affidavit/i, /non[- ]blacklisting/i],
     clarityPatterns: [/notarized/i, /stamp\s+paper/i, /central\s+government/i],
     weight: 8,
     mandatory: true,
@@ -196,13 +235,14 @@ export function extractTenderRequirements(
   metadata?: { title?: string; organization?: string; tenderReference?: string }
 ): TenderRequirement[] {
   const text = tenderText || '';
+  const isShortOrFallback = text.trim().length < 40;
   const identifiedRequirements: TenderRequirement[] = [];
 
   for (const def of TENDER_REQUIREMENT_PATTERNS) {
     const isExplicitlyMentioned = def.patterns.some((p) => p.test(text));
 
-    // If explicitly mentioned or if it's a mandatory procurement standard, include it
-    if (isExplicitlyMentioned || def.mandatory) {
+    // If explicitly mentioned in tender document, OR if tender has no body text and it is a core mandatory standard
+    if (isExplicitlyMentioned || (isShortOrFallback && def.mandatory)) {
       let clauseExcerpt: string | undefined;
 
       // Try to find matching excerpt in tender text
@@ -228,7 +268,22 @@ export function extractTenderRequirements(
     }
   }
 
-  // Normalize weights so total equals 100
+  // Ensure at least core statutory requirements exist if none matched
+  if (identifiedRequirements.length === 0) {
+    for (const def of TENDER_REQUIREMENT_PATTERNS.filter(d => d.mandatory)) {
+      identifiedRequirements.push({
+        id: def.id,
+        name: def.name,
+        category: def.category,
+        description: def.description,
+        mandatory: def.mandatory,
+        weight: def.weight,
+        tenderClauseExcerpt: `Standard statutory requirement for ${def.name}.`,
+      });
+    }
+  }
+
+  // Normalize weights so total equals exactly 100
   const rawSum = identifiedRequirements.reduce((acc, r) => acc + r.weight, 0);
   if (rawSum > 0) {
     let runningSum = 0;
@@ -246,26 +301,21 @@ export function extractTenderRequirements(
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   CALCULATE RISK LEVEL (RULE 5)
+   CALCULATE RISK LEVEL
    80–100 → LOW
-   65–79  → MEDIUM
-   0–64   → HIGH
+   60–79  → MEDIUM
+   0–59   → HIGH
 ────────────────────────────────────────────────────────────────────────── */
 
 export function calculateRiskLevel(complianceScore: number): 'LOW' | 'MEDIUM' | 'HIGH' {
   if (complianceScore >= 80) return 'LOW';
-  if (complianceScore >= 65) return 'MEDIUM';
+  if (complianceScore >= 60) return 'MEDIUM';
   return 'HIGH';
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
    COMPARE BIDDER AGAINST TENDER
    Evaluates each tender requirement against bidder documents.
-   Computes:
-   - Compliance Score (0 to 100)
-   - Compliance Percentage (0 to 100%)
-   - Risk Score = 100 - Compliance Score
-   - Risk Level = LOW / MEDIUM / HIGH
 ────────────────────────────────────────────────────────────────────────── */
 
 export function compareBidderAgainstTender(
@@ -276,9 +326,12 @@ export function compareBidderAgainstTender(
   documents?: DocumentItem[]
 ): VerificationReport {
   const text = bidderText || '';
-  const requirements = tender.requirements && tender.requirements.length > 0
-    ? tender.requirements
-    : extractTenderRequirements(tender.extractedText || '');
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const requirements =
+    tender.requirements && tender.requirements.length > 0
+      ? tender.requirements
+      : extractTenderRequirements(tender.extractedText || '');
 
   const comparisonResults: RequirementComparisonItem[] = [];
   const compliantRequirements: string[] = [];
@@ -290,24 +343,9 @@ export function compareBidderAgainstTender(
   let earnedScore = 0;
   const totalWeight = requirements.reduce((acc, r) => acc + r.weight, 0);
 
-  // Suspicious pattern checks (e.g. fake GSTIN / PAN / expired dates)
-  const dummyGstPattern = /\b\d{2}[A-Z]{5}0000[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b/i;
-  const dummyPanPattern = /\b(AAAAA|XXXXX|ZZZZZ)\d{4}[A-Z]\b/i;
-  const expiredDatePattern = /(expired|valid\s+up\s+to\s+201\d|valid\s+till\s+202[0-2])/i;
-
-  let integrityPenalty = 0;
-  if (dummyGstPattern.test(text)) {
-    keyRiskFactors.push('Suspicious GSTIN format identified with repetitive placeholder zeroes.');
-    integrityPenalty += 15;
-  }
-  if (dummyPanPattern.test(text)) {
-    keyRiskFactors.push('Potential placeholder / dummy PAN format detected in document text.');
-    integrityPenalty += 15;
-  }
-  if (expiredDatePattern.test(text)) {
-    keyRiskFactors.push('References to expired certifications or validity dates preceding 2023.');
-    integrityPenalty += 10;
-  }
+  // Check for dummy / placeholder credentials across entire text
+  const hasDummyGst = /\b\d{2}[A-Z]{5}0000[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b/i.test(text) || /\b\d{2}(AAAAA|XXXXX)\d{4}/i.test(text);
+  const hasDummyPan = /\b(AAAAA|XXXXX|ZZZZZ)\d{4}[A-Z]\b/i.test(text);
 
   // Evaluate each tender requirement against bidder document
   for (const req of requirements) {
@@ -318,87 +356,116 @@ export function compareBidderAgainstTender(
     let remarks = '';
     let scoreAwarded = 0;
 
+    // 1. Locate the specific line or excerpt in the bidder document referencing this requirement
+    let matchingLine = '';
     if (patternDef) {
-      const hasStrongEvidence = patternDef.evidencePatterns.some((p) => p.test(text));
-      const hasGeneralMention = patternDef.patterns.some((p) => p.test(text));
-      const hasClarity = patternDef.clarityPatterns.some((p) => p.test(text));
-
-      // Try to extract actual excerpt for evidence
-      let extractedExcerpt = '';
-      for (const p of [...patternDef.evidencePatterns, ...patternDef.patterns]) {
-        const match = text.match(p);
-        if (match && match.index !== undefined) {
-          const start = Math.max(0, match.index - 40);
-          const end = Math.min(text.length, match.index + 120);
-          extractedExcerpt = text.slice(start, end).replace(/\s+/g, ' ').trim();
+      for (const line of lines) {
+        if (patternDef.patterns.some((p) => p.test(line)) || patternDef.evidencePatterns.some((p) => p.test(line))) {
+          matchingLine = line;
           break;
         }
       }
+    }
 
-      if (hasStrongEvidence || (hasGeneralMention && hasClarity)) {
+    // 2. Specific credential checks for GST and PAN
+    if (req.id === 'req_gst' && hasDummyGst) {
+      status = 'Non-Compliant';
+      const gstMatch = text.match(/\b\d{2}[A-Z]{5}[A-Z\d]{5}[A-Z\d]{3}\b/i);
+      const matchedGst = gstMatch ? gstMatch[0] : '07AAAAA0000A1Z5';
+      bidderEvidence = `GSTIN: ${matchedGst} (Placeholder / Dummy format)`;
+      remarks = `CRITICAL FRAUD RISK: Invalid placeholder GSTIN (${matchedGst}) with dummy zeroes/characters.`;
+      scoreAwarded = 0;
+      nonCompliantRequirements.push(req.name);
+      keyRiskFactors.push(`Critical: Placeholder / Dummy GSTIN format detected (${matchedGst}).`);
+    } else if (req.id === 'req_pan' && hasDummyPan) {
+      status = 'Non-Compliant';
+      bidderEvidence = 'PAN Card copy with placeholder letters (AAAAA/XXXXX)';
+      remarks = 'CRITICAL RISK: Placeholder PAN number format detected in submission.';
+      scoreAwarded = 0;
+      nonCompliantRequirements.push(req.name);
+      keyRiskFactors.push('Critical: Placeholder PAN card format detected.');
+    } else if (matchingLine) {
+      // Analyze the found line / clause context for status indicators
+      const isExplicitlyNotAttached =
+        /not\s+(attached|submitted|provided|furnished|enclosed|applicable)/i.test(matchingLine) ||
+        /\b(not\s+attached\s+n\/?a|unattached|omitted)\b/i.test(matchingLine);
+
+      const isDeficientOrDeviation =
+        /\b(deficient|incomplete|partial|shortfall|deviation|deviation\s+declared)\b/i.test(matchingLine);
+
+      const isExplicitlyAttached =
+        /\b(attached|enclosed|submitted|furnished|provided|complied|verified|satisfactory)\b/i.test(matchingLine);
+
+      bidderEvidence = matchingLine;
+
+      if (isExplicitlyNotAttached) {
+        status = req.mandatory ? 'Non-Compliant' : 'Missing';
+        remarks = `Mandatory document NOT ATTACHED as per bidder checklist: "${matchingLine}".`;
+        scoreAwarded = 0;
+        if (req.mandatory) {
+          nonCompliantRequirements.push(req.name);
+          keyRiskFactors.push(`Mandatory requirement NOT ATTACHED: ${req.name}.`);
+        } else {
+          missingRequirements.push(req.name);
+        }
+      } else if (isDeficientOrDeviation) {
+        status = 'Non-Compliant';
+        remarks = `Submission declared DEFICIENT or DEVIATED from tender criteria: "${matchingLine}".`;
+        scoreAwarded = Math.round(req.weight * 0.25);
+        nonCompliantRequirements.push(req.name);
+        keyRiskFactors.push(`Deficient or deviated submission for ${req.name}: ${matchingLine}`);
+      } else if (isExplicitlyAttached) {
         status = 'Compliant';
-        bidderEvidence = extractedExcerpt || `Verified: ${patternDef.notesFound}`;
+        remarks = `Verified: Submittal confirms document is attached and valid.`;
+        scoreAwarded = req.weight;
+        compliantRequirements.push(req.name);
+      } else if (patternDef && patternDef.evidencePatterns.some((p) => p.test(text))) {
+        status = 'Compliant';
         remarks = patternDef.notesFound;
         scoreAwarded = req.weight;
         compliantRequirements.push(req.name);
-      } else if (hasGeneralMention) {
+      } else {
         status = 'Needs Review';
-        bidderEvidence = extractedExcerpt || 'Mentioned in submittals, but specific certification or registration code needs verification.';
-        remarks = `Clause mentioned partially, but full compliance verification requires formal attachment clarification.`;
+        remarks = `Mentioned in submittal but formal verification of attachment is needed.`;
         scoreAwarded = Math.round(req.weight * 0.5);
         needsReview.push(req.name);
-        if (req.mandatory) {
-          keyRiskFactors.push(`Ambiguous evidence provided for mandatory requirement: ${req.name}.`);
-        }
-      } else {
-        status = req.mandatory ? 'Non-Compliant' : 'Missing';
-        bidderEvidence = 'No relevant clause, certificate, or reference found in submitted documents.';
-        remarks = patternDef.notesMissing;
-        scoreAwarded = 0;
-
-        if (req.mandatory) {
-          nonCompliantRequirements.push(req.name);
-          missingRequirements.push(req.name);
-          keyRiskFactors.push(`Mandatory tender requirement missing or non-compliant: ${req.name}.`);
-        } else {
-          missingRequirements.push(req.name);
+      }
+    } else if (patternDef && patternDef.evidencePatterns.some((p) => p.test(text))) {
+      // Direct evidence pattern match anywhere in bidder text
+      let excerpt = '';
+      for (const p of patternDef.evidencePatterns) {
+        const m = text.match(p);
+        if (m && m.index !== undefined) {
+          const s = Math.max(0, m.index - 30);
+          const e = Math.min(text.length, m.index + 90);
+          excerpt = text.slice(s, e).replace(/\s+/g, ' ').trim();
+          break;
         }
       }
+      status = 'Compliant';
+      bidderEvidence = excerpt || `Verified: ${patternDef.notesFound}`;
+      remarks = patternDef.notesFound;
+      scoreAwarded = req.weight;
+      compliantRequirements.push(req.name);
     } else {
-      // Fallback for custom tender requirements
-      const words = req.name.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-      const matchedWordCount = words.filter((w) => text.toLowerCase().includes(w)).length;
-
-      if (matchedWordCount === words.length && words.length > 0) {
-        status = 'Compliant';
-        bidderEvidence = `Verified: Submittal demonstrates compliance with ${req.name}.`;
-        remarks = `Document satisfies ${req.name}.`;
-        scoreAwarded = req.weight;
-        compliantRequirements.push(req.name);
-      } else if (matchedWordCount > 0) {
-        status = 'Needs Review';
-        bidderEvidence = `Partial reference to ${req.name} detected.`;
-        remarks = `Requires scrutiny or supplementary verification.`;
-        scoreAwarded = Math.round(req.weight * 0.5);
-        needsReview.push(req.name);
+      // Not found anywhere
+      status = req.mandatory ? 'Non-Compliant' : 'Missing';
+      bidderEvidence = 'No supporting clause, attachment reference, or certificate found in submitted documents.';
+      remarks = patternDef ? patternDef.notesMissing : `No documentation found for ${req.name}.`;
+      scoreAwarded = 0;
+      if (req.mandatory) {
+        nonCompliantRequirements.push(req.name);
+        missingRequirements.push(req.name);
+        keyRiskFactors.push(`Mandatory tender requirement omitted: ${req.name}.`);
       } else {
-        status = req.mandatory ? 'Non-Compliant' : 'Missing';
-        bidderEvidence = `No evidence found for ${req.name}.`;
-        remarks = `Bidder did not demonstrate compliance with ${req.name}.`;
-        scoreAwarded = 0;
-        if (req.mandatory) {
-          nonCompliantRequirements.push(req.name);
-          keyRiskFactors.push(`Missing mandatory requirement: ${req.name}.`);
-        } else {
-          missingRequirements.push(req.name);
-        }
+        missingRequirements.push(req.name);
       }
     }
 
     earnedScore += scoreAwarded;
 
     comparisonResults.push({
-      id: `cmp_${req.id}_${Date.now()}`,
+      id: `cmp_${req.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       requirementId: req.id,
       tenderRequirement: req.name,
       category: req.category,
@@ -411,8 +478,7 @@ export function compareBidderAgainstTender(
   }
 
   // Calculate raw compliance score out of 100
-  let rawCompliance = totalWeight > 0 ? (earnedScore / totalWeight) * 100 : 0;
-  rawCompliance = Math.max(0, rawCompliance - integrityPenalty);
+  const rawCompliance = totalWeight > 0 ? (earnedScore / totalWeight) * 100 : 0;
   const complianceScore = Math.max(0, Math.min(100, Math.round(rawCompliance)));
   const compliancePercentage = complianceScore;
 
@@ -427,9 +493,9 @@ export function compareBidderAgainstTender(
   if (riskLevel === 'LOW') {
     aiSummary = `Autonomous comparative verification of bidder "${bidderName}" against tender "${tender.title}" completed with high compliance (${complianceScore}/100, LOW RISK). The bidder successfully satisfies ${compliantRequirements.length} out of ${requirements.length} tender requirements, including all core statutory registrations, tax compliances, and primary technical capabilities. Risk score is ${riskScore}/100. Commercial qualification is strongly recommended.`;
   } else if (riskLevel === 'MEDIUM') {
-    aiSummary = `Comparative evaluation of bidder "${bidderName}" against tender "${tender.title}" reflects moderate compliance (${complianceScore}/100, MEDIUM RISK, Risk Score: ${riskScore}/100). The submission complies with ${compliantRequirements.length} requirements, but ${needsReview.length} items require clarification and ${missingRequirements.length} clauses remain unverified. Formal pre-award clarification on highlighted gaps is advised.`;
+    aiSummary = `Comparative evaluation of bidder "${bidderName}" against tender "${tender.title}" reflects moderate compliance (${complianceScore}/100, MEDIUM RISK, Risk Score: ${riskScore}/100). The submission complies with ${compliantRequirements.length} requirements, but ${needsReview.length} items require clarification and ${missingRequirements.length + nonCompliantRequirements.length} clauses remain unverified or deficient. Formal pre-award clarification on highlighted gaps is advised.`;
   } else {
-    aiSummary = `Comparative audit of bidder "${bidderName}" against tender "${tender.title}" indicates severe procedural non-compliance (${complianceScore}/100, HIGH RISK, Risk Score: ${riskScore}/100). The bidder failed or omitted ${nonCompliantRequirements.length} mandatory tender requirements (${nonCompliantRequirements.slice(0, 3).join(', ')}). Proceeding with this submission poses critical legal, financial, or performance vulnerabilities. Disqualification recommended.`;
+    aiSummary = `Comparative audit of bidder "${bidderName}" against tender "${tender.title}" indicates severe procedural non-compliance (${complianceScore}/100, HIGH RISK, Risk Score: ${riskScore}/100). The bidder failed, omitted, or declared deficiencies in ${nonCompliantRequirements.length} mandatory tender requirements (${nonCompliantRequirements.slice(0, 3).join(', ')}). Proceeding with this submission poses critical legal, financial, or performance vulnerabilities. Disqualification recommended.`;
   }
 
   const id = 'vfr_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);

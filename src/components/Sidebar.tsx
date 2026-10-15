@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -16,8 +16,14 @@ import {
   Cpu,
   FileCheck,
   Layers,
+  FolderOpen,
+  Briefcase,
+  Users,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { LanguageSelector } from './LanguageSelector';
+import { useLanguage } from '@/lib/i18n';
+import { UserRole } from '@/types';
 
 interface SidebarProps {
   userName?: string;
@@ -27,37 +33,73 @@ interface SidebarProps {
 export function Sidebar({ userName = 'BidRakshak User', userEmail = '' }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useLanguage();
+
+  const [currentRole, setCurrentRole] = useState<UserRole>('officer');
+
+  useEffect(() => {
+    fetch('/api/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.user?.role) {
+          setCurrentRole(data.user.role);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleRoleToggle = async () => {
+    const nextRole: UserRole = currentRole === 'officer' ? 'bidder' : 'officer';
+    setCurrentRole(nextRole);
+    try {
+      await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: nextRole }),
+      });
+      router.refresh();
+    } catch (err) {
+      console.error('Failed to switch role', err);
+    }
+  };
 
   const navItems = [
     {
-      name: 'Dashboard',
+      name: t('navDashboard', 'Dashboard'),
       href: '/dashboard',
       icon: LayoutDashboard,
-      description: 'Overview & Metrics',
+      description: 'Intelligence & Metrics',
     },
     {
-      name: 'Verification Hub',
+      name: t('navTenderLibrary', 'Tender Library'),
+      href: '/tenders',
+      icon: FolderOpen,
+      description: 'Discover & Browse Tenders',
+    },
+    {
+      name: t('navBidderLibrary', 'Bidder Library'),
+      href: '/bidders',
+      icon: Briefcase,
+      description: 'Applications & Bid Profile',
+    },
+    {
+      name: t('navCreateTender', 'Create Tender'),
       href: '/upload',
       icon: UploadCloud,
-      description: 'Tender & Bidder Audit',
+      description: 'Extract & Publish Baseline',
     },
     {
-      name: 'Tenders Registry',
-      href: '/tenders',
-      icon: FileSpreadsheet,
-      description: 'Tenders & Bidders Log',
+      name: t('navVerifications', 'Verification Reports'),
+      href: '/verifications',
+      icon: FileCheck,
+      description: 'Audit & Compliance Reports',
     },
     {
-      name: 'Officer Profile',
+      name: t('navProfile', 'Officer & Profile'),
       href: '/profile',
       icon: User,
-      description: 'Security & Credentials',
+      description: 'Credentials & Role Settings',
     },
-  ];
-
-  const bottomItems = [
-    { name: 'Settings', href: '/profile', icon: Settings },
-    { name: 'How It Works', href: '/#how-it-works', icon: HelpCircle },
   ];
 
   const handleLogout = async () => {
@@ -90,8 +132,37 @@ export function Sidebar({ userName = 'BidRakshak User', userEmail = '' }: Sideba
         <ThemeToggle className="scale-90" />
       </div>
 
+      {/* Language Switcher Bar */}
+      <div className="px-4 pt-3 pb-1 flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/60 pb-3">
+        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Language / भाषा:</span>
+        <LanguageSelector variant="badge" />
+      </div>
+
+      {/* Role Switcher Badge */}
+      <div className="px-4 pt-2.5">
+        <div className="flex items-center justify-between p-2 rounded-lg bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+          <div className="flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Active Role</span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize">
+                {currentRole === 'officer' ? 'Procurement Officer' : 'Bidder / Vendor'}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleRoleToggle}
+            className="text-[10px] font-semibold text-blue-600 dark:text-cyan-400 hover:underline px-1.5 py-0.5 rounded cursor-pointer"
+            title="Toggle between Officer and Bidder view"
+          >
+            Switch
+          </button>
+        </div>
+      </div>
+
       {/* AI Engine status banner */}
-      <div className="px-5 pt-4 pb-1">
+      <div className="px-4 pt-3 pb-1">
         <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -107,9 +178,9 @@ export function Sidebar({ userName = 'BidRakshak User', userEmail = '' }: Sideba
       </div>
 
       {/* Navigation */}
-      <nav className="relative flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        <div className="px-3 pb-2 text-[10px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase">
-          Verification Workspaces
+      <nav className="relative flex-1 px-3 py-3 space-y-1 overflow-y-auto">
+        <div className="px-3 pb-1.5 text-[10px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase">
+          Workspaces
         </div>
 
         {navItems.map((item) => {
@@ -120,91 +191,47 @@ export function Sidebar({ userName = 'BidRakshak User', userEmail = '' }: Sideba
 
           return (
             <Link
-              key={item.name}
+              key={item.href}
               href={item.href}
-              className={`relative group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 overflow-hidden ${
+              className={`group flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 ${
                 isActive
-                  ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-cyan-300 font-semibold shadow-2xs border border-blue-200 dark:border-blue-500/30'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-blue-500/6 hover:text-slate-900 dark:hover:text-slate-200'
+                  ? 'bg-blue-600 dark:bg-cyan-500/20 text-white dark:text-cyan-300 font-semibold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              {/* Icon */}
-              <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all duration-200 ${
+              <Icon
+                className={`w-4 h-4 shrink-0 transition-colors ${
                   isActive
-                    ? 'bg-blue-600 text-white dark:bg-blue-500/20 dark:text-cyan-400 shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 group-hover:bg-blue-100 dark:group-hover:bg-blue-500/15 group-hover:text-blue-600 dark:group-hover:text-blue-400'
+                    ? 'text-white dark:text-cyan-400'
+                    : 'text-slate-400 dark:text-slate-500 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                 }`}
-              >
-                <Icon className="w-4 h-4" />
-              </div>
-
-              {/* Label */}
+              />
               <div className="flex flex-col min-w-0">
-                <span className="leading-tight truncate">{item.name}</span>
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 leading-tight truncate">
-                  {item.description}
-                </span>
+                <span className="truncate">{item.name}</span>
               </div>
-            </Link>
-          );
-        })}
-
-        {/* Divider */}
-        <div className="my-4 border-t border-slate-200 dark:border-blue-500/15" />
-
-        {/* Bottom nav items */}
-        <div className="px-3 pb-2 text-[10px] font-bold tracking-widest text-slate-400 dark:text-slate-500 uppercase">
-          Platform Info
-        </div>
-        {bottomItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className="group flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-blue-500/6 hover:text-slate-800 dark:hover:text-slate-200 transition-all duration-200"
-            >
-              <div className="w-7 h-7 rounded-md flex items-center justify-center bg-slate-100 dark:bg-slate-800/40 group-hover:bg-blue-100 dark:group-hover:bg-blue-500/10 transition-colors">
-                <Icon className="w-3.5 h-3.5" />
-              </div>
-              <span className="font-medium text-xs">{item.name}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Encrypted Security Badge */}
-      <div className="relative mx-3 mb-3 p-3.5 rounded-xl bg-blue-50 dark:bg-blue-500/5 border border-blue-100 dark:border-blue-500/15">
-        <div className="flex items-center gap-2 mb-1">
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-600 dark:text-cyan-400" />
-          <span className="text-[10px] font-bold text-blue-700 dark:text-cyan-400 uppercase tracking-wider">
-            Clearance Protocol
-          </span>
-        </div>
-        <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-          Compliant with GFR 2017 & CVC Guidelines. SIH 2026 Procurement Grade.
-        </p>
-      </div>
-
       {/* User Footer */}
-      <div className="relative px-4 py-4 border-t border-slate-200 dark:border-blue-500/15 flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-cyan-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-xs">
+      <div className="relative px-3 py-3 border-t border-slate-200 dark:border-blue-500/15">
+        <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+          <div className="w-7 h-7 rounded-full bg-blue-600/10 dark:bg-cyan-500/20 flex items-center justify-center text-blue-600 dark:text-cyan-400 font-bold text-xs shrink-0">
             {userName ? userName.charAt(0).toUpperCase() : 'U'}
           </div>
-          <div className="min-w-0">
+          <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{userName}</p>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{userEmail}</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{userEmail || 'Authenticated'}</p>
           </div>
+          <button
+            onClick={handleLogout}
+            title={t('navLogout', 'Sign Out')}
+            className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
-        <button
-          onClick={handleLogout}
-          title="Sign Out"
-          className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg transition-all duration-200 cursor-pointer"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-        </button>
       </div>
     </aside>
   );

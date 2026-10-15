@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useState, use, useRef } from 'react';
+import React, { useEffect, useState, use, useMemo } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { RiskBadge } from '@/components/RiskBadge';
 import { MultiPdfUpload } from '@/components/MultiPdfUpload';
-import { TenderRecord } from '@/types';
+import { TenderRecord, TenderApplication, VerificationReport } from '@/types';
+import { useLanguage } from '@/lib/i18n';
 import {
   ArrowLeft,
   Building2,
@@ -23,6 +24,18 @@ import {
   ChevronDown,
   ChevronUp,
   UserCheck,
+  Send,
+  Save,
+  Clock,
+  Tag,
+  MapPin,
+  ExternalLink,
+  ShieldCheck,
+  Briefcase,
+  AlertTriangle,
+  Play,
+  Eye,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function TenderDetailPage({
@@ -32,161 +45,192 @@ export default function TenderDetailPage({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { t } = useLanguage();
 
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
   const [tender, setTender] = useState<TenderRecord | null>(null);
+  const [applications, setApplications] = useState<TenderApplication[]>([]);
+  const [isCreator, setIsCreator] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showRawText, setShowRawText] = useState(false);
 
-  // New Bidder Verification Modal State
-  const [modalOpen, setModalOpen] = useState(false);
+  // Apply Modal State
+  const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [bidderName, setBidderName] = useState('');
+  const [companyPan, setCompanyPan] = useState('');
+  const [companyGstin, setCompanyGstin] = useState('');
+  const [companyUdyam, setCompanyUdyam] = useState('');
+  const [companyTurnover, setCompanyTurnover] = useState('');
   const [bidderFiles, setBidderFiles] = useState<File[]>([]);
   const [bidderText, setBidderText] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [uploadError, setUploadError] = useState('');
+  const [submittingApp, setSubmittingApp] = useState(false);
+  const [appError, setAppError] = useState('');
+  const [appSuccess, setAppSuccess] = useState('');
 
-  const fetchTender = () => {
-    fetch(`/api/tenders/${resolvedParams.id}`)
-      .then(async (res) => {
-        if (res.status === 401) {
-          router.push('/login');
-          return null;
-        }
-        if (!res.ok) throw new Error('Tender record not found.');
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.tender) setTender(data.tender);
-      })
-      .catch((err: Error) => {
-        console.error(err);
-        setError(err.message || 'Failed to retrieve tender.');
-      })
-      .finally(() => setLoading(false));
+  // Verification Run State
+  const [verifyingAppId, setVerifyingAppId] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
+  const fetchTenderDetails = async () => {
+    try {
+      const res = await fetch(`/api/tenders/${resolvedParams.id}`);
+      if (!res.ok) {
+        const d = await res.json();
+        throw new Error(d.error || 'Tender record not found.');
+      }
+      const data = await res.json();
+      if (data && data.tender) {
+        setTender(data.tender);
+        setIsCreator(!!data.isCreator);
+        if (data.applications) setApplications(data.applications);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to retrieve tender.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetch('/api/auth/me')
-      .then((res) => {
-        if (!res.ok) router.push('/login');
-        return res.json();
-      })
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && data.user) setUser(data.user);
+        if (data && data.user) {
+          setUser(data.user);
+          setBidderName(data.user.name || '');
+        }
       })
-      .catch(() => router.push('/login'));
+      .catch(() => {});
 
-    fetchTender();
-  }, [resolvedParams.id, router]);
+    // Fetch user profile to prefill company info
+    fetch('/api/profile')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((pData) => {
+        if (pData?.user) {
+          if (pData.user.companyName) setBidderName(pData.user.companyName);
+          if (pData.user.pan) setCompanyPan(pData.user.pan);
+          if (pData.user.gstin) setCompanyGstin(pData.user.gstin);
+          if (pData.user.udyamNumber) setCompanyUdyam(pData.user.udyamNumber);
+        }
+      })
+      .catch(() => {});
 
-  const handleVerifyBidder = async (e: React.FormEvent) => {
-    e.preventDefault();
+    fetchTenderDetails();
+
+    if (searchParams.get('apply') === 'true') {
+      setApplyModalOpen(true);
+    }
+  }, [resolvedParams.id, searchParams]);
+
+  // Handle Publish Tender (for creator)
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/tenders/${resolvedParams.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Published' }),
+      });
+      if (!res.ok) throw new Error('Failed to publish tender.');
+      setTender((prev) => (prev ? { ...prev, status: 'Published' } : null));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Error publishing tender');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // Submit Bidder Application (Draft or Final)
+  const handleApplySubmit = async (isDraft: boolean) => {
     if (!bidderName.trim()) {
-      setUploadError('Please enter the bidder name.');
+      setAppError('Please enter the bidder / organization name.');
       return;
     }
-    if (bidderFiles.length === 0 && !bidderText.trim()) {
-      setUploadError('Please select at least one bidder PDF document or provide submission text.');
-      return;
-    }
-    if (bidderFiles.length > 10) {
-      setUploadError('Maximum 10 bidder PDF documents allowed per batch.');
+    if (!isDraft && bidderFiles.length === 0 && !bidderText.trim()) {
+      setAppError('Please attach at least one bid document (PDF) or furnish submission details.');
       return;
     }
 
-    setVerifying(true);
-    setUploadError('');
+    setSubmittingApp(true);
+    setAppError('');
+    setAppSuccess('');
 
     try {
       const formData = new FormData();
       formData.append('bidderName', bidderName.trim());
-      bidderFiles.forEach((file) => {
-        formData.append('files', file);
-      });
-      if (bidderText) {
-        formData.append('extractedText', bidderText);
-      }
+      formData.append('companyPan', companyPan.trim());
+      formData.append('companyGstin', companyGstin.trim());
+      formData.append('companyUdyam', companyUdyam.trim());
+      formData.append('companyTurnover', companyTurnover.trim());
+      formData.append('isDraft', isDraft ? 'true' : 'false');
+      bidderFiles.forEach((file) => formData.append('files', file));
+      if (bidderText) formData.append('extractedText', bidderText);
 
-      const res = await fetch(`/api/tenders/${resolvedParams.id}/bidders`, {
+      const res = await fetch(`/api/tenders/${resolvedParams.id}/apply`, {
         method: 'POST',
         body: formData,
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to verify bidder against tender.');
+        throw new Error(data.error || 'Failed to submit application.');
       }
 
-      setModalOpen(false);
-      setBidderName('');
-      setBidderFiles([]);
-      setBidderText('');
+      setAppSuccess(
+        isDraft
+          ? 'Application saved as Draft.'
+          : 'Application submitted successfully! It is now queued for verification.'
+      );
 
-      // Redirect directly to the generated AI verification report
+      // Refresh applications list
+      fetchTenderDetails();
+
+      setTimeout(() => {
+        setApplyModalOpen(false);
+        setAppSuccess('');
+      }, 1500);
+    } catch (err: unknown) {
+      setAppError(err instanceof Error ? err.message : 'Error submitting application');
+    } finally {
+      setSubmittingApp(false);
+    }
+  };
+
+  // Run On-Demand AI Verification on a submitted application
+  const handleRunVerification = async (applicationId: string) => {
+    setVerifyingAppId(applicationId);
+    try {
+      const res = await fetch(`/api/applications/${applicationId}/verify`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to execute verification audit.');
+      }
+
+      // Navigate directly to the generated verification audit report!
       router.push(`/verifications/${data.verification.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error verifying bidder';
-      setUploadError(msg);
-    } finally {
-      setVerifying(false);
+      alert(err instanceof Error ? err.message : 'Verification failed');
+      setVerifyingAppId(null);
     }
   };
 
-  // 1-Click Sample Bidder Loader for testing
-  const handleLoadSampleBidder = (type: 'compliant' | 'medium' | 'high') => {
-    setUploadError('');
-    setBidderFiles([]);
-    if (type === 'compliant') {
-      setBidderName('ABC Technologies Pvt Ltd');
-      setBidderText(`BIDDER QUALIFICATION SUBMISSION
-Bidder: ABC Technologies Pvt Ltd
-Tender Reference: ${tender?.tenderReference || 'TND-2026'}
-1. GST REGISTRATION: Active GSTIN 27ABCDE1234F1Z5. Regular GSTR-3B filings enclosed for last 12 months.
-2. PAN & TAX: Permanent Account Number AAACA9999P. Last 3 years Income Tax Returns (ITR-V) enclosed.
-3. COMPANY REGISTRATION: Registered under Companies Act 2013, CIN: U72200MH2016PTC284910.
-4. MSME / UDYAM: Registered as Micro enterprise under Udyam Registration UDYAM-MH-02-0012345.
-5. FINANCIAL CAPACITY: Annual average turnover of INR 18.5 Crores over preceding 3 financial years. Audited balance sheets with CA UDIN: 26045812BKRLPX8819 verified.
-6. OEM AUTHORIZATION: Official Manufacturer Authorization Form (MAF) from Equipment OEM enclosed for all active equipment.
-7. PAST EXPERIENCE: Executed 4 similar large-scale projects. Client work orders and completion certificates attached.
-8. MAKE IN INDIA: Self-declaration of 65% Class-I Local Content under PPP-MII policy.
-9. NON-BLACKLISTING: Notarized affidavit affirming non-debarment and non-blacklisting on INR 100 non-judicial stamp paper.`);
-    } else if (type === 'medium') {
-      setBidderName('XYZ Solutions & Networks');
-      setBidderText(`BIDDER QUALIFICATION DOSSIER
-Bidder: XYZ Solutions & Networks
-Tender: ${tender?.title || 'Procurement Tender'}
-1. GSTIN: 07BBBBB5678G2Z1 active registration.
-2. PAN: BBBBB5678G attached.
-3. FINANCIAL: Average turnover of INR 8.2 Crores. CA turnover certificate provided without explicit UDIN number.
-4. OEM AUTHORIZATION: Standard reseller authorization attached; tender-specific MAF is currently under processing from manufacturer.
-5. PAST WORK: 1 completed project certificate enclosed. Second project completion pending signoff.
-6. MAKE IN INDIA: Local content declaration submitted with 45% estimation.
-7. NON-BLACKLISTING: Declaration letter on company letterhead.`);
-    } else {
-      setBidderName('PQR Systems');
-      setBidderText(`BIDDER PROPOSAL
-Bidder: PQR Systems
-General proposal for IT and Equipment supply.
-Company Profile: We are a regional vendor providing supplies.
-Financials: Adequate financial capability to execute works.
-Experience: Completed miscellaneous supply orders in regional markets.
-Note: Statutory certificates and specific OEM authorization letters will be submitted post-qualification upon request.`);
-    }
-  };
+  const isDeadlinePassed = useMemo(() => {
+    if (!tender?.submissionDeadline) return false;
+    const d = new Date(tender.submissionDeadline);
+    d.setHours(23, 59, 59, 999);
+    return Date.now() > d.getTime();
+  }, [tender?.submissionDeadline]);
 
   if (loading) {
     return (
       <div className="flex h-screen bg-[var(--bg-base)] items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-full border-2 border-blue-500/30 animate-spin border-t-blue-500" />
-            <Cpu className="w-5 h-5 text-blue-600 dark:text-cyan-400 absolute inset-0 m-auto" />
-          </div>
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-            Loading Tender &amp; Bidder History...
-          </p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-2 border-blue-500/30 animate-spin border-t-blue-500" />
+          <p className="text-xs text-slate-500">Loading tender specifications...</p>
         </div>
       </div>
     );
@@ -196,414 +240,513 @@ Note: Statutory certificates and specific OEM authorization letters will be subm
     return (
       <div className="flex min-h-screen bg-[var(--bg-base)]">
         <Sidebar userName={user?.name} userEmail={user?.email} />
-        <main className="flex-1 p-8 flex flex-col items-center justify-center text-center">
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/25 flex items-center justify-center mb-4">
-            <AlertCircle className="w-6 h-6 text-rose-500" />
+        <main className="flex-1 p-8 flex items-center justify-center">
+          <div className="max-w-md w-full p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-4">
+            <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">Unable to Load Tender</h2>
+            <p className="text-xs text-slate-500">{error || 'Tender record not found.'}</p>
+            <Link
+              href="/tenders"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Tender Library</span>
+            </Link>
           </div>
-          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-200 mb-2">Tender Not Found</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-sm mb-6">
-            {error || 'The requested tender could not be located.'}
-          </p>
-          <Link
-            href="/tenders"
-            className="btn-primary px-5 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl text-white"
-          >
-            Back to Tenders
-          </Link>
         </main>
       </div>
     );
   }
 
-  const bidders = tender.bidders || [];
-  const requirements = tender.requirements || [];
+  const isDraft = tender.status === 'Draft';
+  const isClosed = tender.status === 'Closed' || isDeadlinePassed;
 
   return (
     <div className="flex min-h-screen bg-[var(--bg-base)] text-slate-800 dark:text-slate-100 transition-colors duration-200">
       <Sidebar userName={user?.name} userEmail={user?.email} />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        {/* Header */}
-        <header className="bg-white/85 dark:bg-[#071224]/80 backdrop-blur-md border-b border-slate-200 dark:border-blue-500/15 px-6 sm:px-8 py-4 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-20">
+        {/* Top Header */}
+        <header className="bg-white/80 dark:bg-[#071224]/80 backdrop-blur-md border-b border-slate-200 dark:border-blue-500/15 px-6 sm:px-8 py-4 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
             <Link
               href="/tenders"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-cyan-300 transition-colors"
+              className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 rounded-xl transition-colors cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>All Tenders</span>
             </Link>
-            <span className="text-slate-300 dark:text-slate-700">•</span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-cyan-300 border border-blue-200 dark:border-blue-500/30">
-              <FileText className="w-3 h-3" />
-              Tender Overview &amp; Bidders
-            </span>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] uppercase font-bold tracking-widest text-blue-600 dark:text-cyan-400 px-2 py-0.5 rounded bg-blue-50 dark:bg-cyan-950/50 border border-blue-200 dark:border-cyan-500/30">
+                  {tender.tenderReference || 'TENDER SPEC'}
+                </span>
+                {isDraft ? (
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-full">
+                    {t('statusDraft', 'Draft')}
+                  </span>
+                ) : isClosed ? (
+                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-300 px-2 py-0.5 rounded-full">
+                    {t('statusClosed', 'Closed')}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 px-2 py-0.5 rounded-full">
+                    {t('statusOpen', 'Open for Bids')}
+                  </span>
+                )}
+              </div>
+              <h1 className="text-base font-bold text-slate-900 dark:text-white tracking-tight line-clamp-1">
+                {tender.title}
+              </h1>
+            </div>
           </div>
 
+          {/* Action Bar */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setModalOpen(true)}
-              className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl text-white shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Verify New Bidder</span>
-            </button>
+            {isDraft && isCreator && (
+              <button
+                type="button"
+                onClick={handlePublish}
+                disabled={publishing}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{publishing ? 'Publishing...' : t('btnPublish', 'Publish Tender')}</span>
+              </button>
+            )}
+
+            {!isDraft && !isClosed && (
+              <button
+                type="button"
+                onClick={() => setApplyModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 dark:bg-cyan-600 dark:hover:bg-cyan-500 rounded-xl transition-all shadow-xs cursor-pointer"
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                <span>{t('btnApply', 'Apply for Tender')}</span>
+              </button>
+            )}
           </div>
         </header>
 
-        <div className="p-6 sm:p-8 max-w-6xl w-full mx-auto space-y-8">
-          {/* ============================================================
-              1. TENDER SUMMARY CARD
-             ============================================================ */}
-          <div className="premium-card p-6 sm:p-7 rounded-2xl relative overflow-hidden">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="space-y-1.5 max-w-3xl">
-                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                  <span className="font-mono font-bold text-blue-600 dark:text-cyan-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-500/20">
-                    {tender.tenderReference || 'TND-REF'}
-                  </span>
-                  <span>•</span>
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>Created: {new Date(tender.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' })}</span>
-                  <span>•</span>
-                  <span>Doc: {tender.documentRef}</span>
-                  {tender.documents && tender.documents.length > 1 && (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-100/70 dark:bg-blue-900/40 text-blue-700 dark:text-cyan-300 border border-blue-200 dark:border-blue-500/30">
-                      {tender.documents.length} Tender PDFs Combined
+        {/* Content Body */}
+        <div className="p-6 sm:p-8 max-w-6xl w-full mx-auto space-y-6">
+          {/* Overview Card */}
+          <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+              <div className="space-y-1">
+                <span className="text-xs text-slate-400 font-medium">{t('departmentLabel', 'Issuing Organization')}</span>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Building2 className="w-4 h-4 text-slate-400" />
+                  {tender.organization}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs">
+                {tender.category && (
+                  <div>
+                    <span className="text-slate-400 block">{t('categoryLabel', 'Category')}</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1 mt-0.5">
+                      <Tag className="w-3.5 h-3.5 text-slate-400" />
+                      {tender.category}
                     </span>
-                  )}
+                  </div>
+                )}
+                {tender.location && (
+                  <div>
+                    <span className="text-slate-400 block">{t('locationLabel', 'Location')}</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      {tender.location}
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-slate-400 block">{t('budgetLabel', 'Estimated Value')}</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200 mt-0.5 block">
+                    {tender.estimatedBudget || 'Not Disclosed'}
+                  </span>
                 </div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-                  {tender.title}
-                </h1>
-                <p className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 font-medium">
-                  <Building2 className="w-3.5 h-3.5 text-blue-600 dark:text-cyan-400 shrink-0" />
-                  Issuing Department / Buyer: {tender.organization}
-                </p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
-                <div className="text-right sm:text-left bg-slate-50 dark:bg-[#071224] p-3 rounded-xl border border-slate-200 dark:border-blue-500/15">
-                  <p className="text-[10px] uppercase font-bold text-slate-400">Total Bidders</p>
-                  <p className="text-xl font-bold font-mono text-slate-900 dark:text-white">
-                    {bidders.length} verified
-                  </p>
-                </div>
-                <div className="bg-slate-50 dark:bg-[#071224] p-3 rounded-xl border border-slate-200 dark:border-blue-500/15">
-                  <p className="text-[10px] uppercase font-bold text-slate-400">Requirements</p>
-                  <p className="text-xl font-bold font-mono text-blue-600 dark:text-cyan-400">
-                    {requirements.length} criteria
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ============================================================
-              2. VERIFICATION HISTORY (MULTIPLE BIDDERS FOR THIS TENDER)
-              Requirement 8
-             ============================================================ */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  Verification History ({bidders.length} Bidders)
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  All bidders evaluated independently against this tender’s requirements
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl text-white shadow-2xs cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Bidder</span>
-              </button>
-            </div>
-
-            {bidders.length === 0 ? (
-              <div className="premium-card p-8 rounded-2xl text-center border-dashed border-slate-300 dark:border-blue-500/30">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-cyan-400 flex items-center justify-center mx-auto mb-3">
-                  <UserCheck className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1">
-                  No Bidders Verified for this Tender Yet
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-4">
-                  Upload a bidder qualification PDF to compare it clause-by-clause against this tender and compute compliance and risk scores.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(true)}
-                  className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl text-white"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Verify First Bidder</span>
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {bidders.map((b) => (
-                  <Link
-                    key={b.id}
-                    href={`/verifications/${b.id}`}
-                    className="group premium-card p-5 rounded-2xl relative overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:border-blue-500/40 flex flex-col justify-between"
+                <div>
+                  <span className="text-slate-400 block">{t('deadlineLabel', 'Deadline')}</span>
+                  <span
+                    className={`font-semibold mt-0.5 block ${
+                      isClosed ? 'text-red-500' : 'text-slate-700 dark:text-slate-200'
+                    }`}
                   >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-cyan-300 transition-colors truncate">
-                            {b.bidderName}
-                          </h3>
-                          <p className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">
-                            Doc: {b.bidderDocumentRef}
-                          </p>
-                        </div>
-                        <RiskBadge level={b.riskLevel} size="sm" />
-                      </div>
+                    {tender.submissionDeadline || 'Open'}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-                      {/* Scores display adhering to Requirement 8 */}
-                      <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#071224] border border-slate-100 dark:border-blue-500/15 grid grid-cols-2 gap-2 text-center my-3">
-                        <div>
-                          <p className="text-[9px] uppercase font-bold text-slate-400">Compliance</p>
-                          <p className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">
-                            {b.compliancePercentage}%
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[9px] uppercase font-bold text-slate-400">Risk Score</p>
-                          <p className="text-lg font-black font-mono text-rose-600 dark:text-rose-400">
-                            {b.riskScore}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                        {b.aiSummary}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-blue-500/15 flex items-center justify-between text-xs font-semibold text-blue-600 dark:text-cyan-400">
-                      <span>Open AI Verification Report</span>
-                      <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </div>
-                  </Link>
-                ))}
+            {tender.description && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300">
+                <p className="font-semibold text-slate-700 dark:text-slate-200 mb-1">{t('tenderScopeLabel', 'Scope & Description')}:</p>
+                <p className="leading-relaxed">{tender.description}</p>
               </div>
             )}
-          </section>
+          </div>
 
-          {/* ============================================================
-              3. TENDER REQUIREMENTS (ISOLATED TO THIS TENDER)
-             ============================================================ */}
-          <section className="premium-card rounded-2xl overflow-hidden shadow-xs">
-            <div className="px-6 py-4 border-b border-slate-200 dark:border-blue-500/15 flex items-center justify-between bg-slate-50/50 dark:bg-[#071224]/50">
+          {/* Section: Tender Eligibility & Criteria Baseline */}
+          <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <Layers className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
-                  Tender Requirements Baseline ({requirements.length} Criteria)
+                  <span>Mandatory &amp; Technical Eligibility Criteria ({tender.requirements?.length || 0})</span>
                 </h3>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Evaluation rules extracted specifically for this tender. All bidders are compared against these clauses.
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Extracted clause-by-clause standard baseline against which all applicant bids are evaluated.
                 </p>
               </div>
             </div>
 
-            <div className="divide-y divide-slate-100 dark:divide-blue-500/10">
-              {requirements.map((req, idx) => (
-                <div key={req.id || idx} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 table-row-hover">
-                  <div className="space-y-1 max-w-2xl">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900 dark:text-white">
-                        {req.name}
-                      </span>
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        {req.category}
-                      </span>
-                      {req.mandatory && (
-                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30">
-                          Mandatory
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      {req.description}
-                    </p>
-                    {req.tenderClauseExcerpt && (
-                      <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-[#040c18] p-2 rounded border border-slate-100 dark:border-blue-500/10">
-                        Excerpt: &ldquo;{req.tenderClauseExcerpt}&rdquo;
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-blue-600 dark:text-cyan-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-1 rounded-md border border-blue-200 dark:border-blue-500/20">
-                      Weight: {req.weight}%
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {(tender.requirements || []).map((req, idx) => (
+                <div
+                  key={req.id || idx}
+                  className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-1.5 text-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
+                      {idx + 1}. {req.name}
                     </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 shrink-0">
+                      {req.category}
+                    </span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px]">{req.description}</p>
+                  <div className="flex items-center justify-between pt-1 text-[10px]">
+                    <span
+                      className={`font-semibold px-1.5 py-0.5 rounded ${
+                        req.mandatory
+                          ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+                          : 'bg-slate-200 text-slate-500'
+                      }`}
+                    >
+                      {req.mandatory ? 'Mandatory' : 'Optional'}
+                    </span>
+                    <span className="text-slate-400 font-medium">Weight: {req.weight}%</span>
                   </div>
                 </div>
               ))}
             </div>
-          </section>
-
-          {/* Raw Text Viewer */}
-          <div className="premium-card rounded-2xl overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowRawText(!showRawText)}
-              className="w-full px-6 py-4 flex items-center justify-between text-left text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider hover:bg-slate-50 dark:hover:bg-blue-500/5 transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-slate-400" />
-                Inspect Raw Extracted Tender Text
-              </span>
-              {showRawText ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-
-            {showRawText && (
-              <div className="p-6 border-t border-slate-200 dark:border-blue-500/15 bg-slate-50 dark:bg-[#040c18]">
-                <pre className="text-[11px] font-mono whitespace-pre-wrap text-slate-700 dark:text-slate-300 max-h-96 overflow-y-auto leading-relaxed">
-                  {tender.extractedText || 'No text content available.'}
-                </pre>
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* Modal */}
-        {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in">
-            <div className="premium-card rounded-2xl max-w-xl w-full p-6 sm:p-7 shadow-2xl relative max-h-[90vh] overflow-y-auto">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-cyan-400 flex items-center justify-center">
-                  <UserCheck className="w-5 h-5" />
-                </div>
+          {/* Section for Creator / Officer: Received Bidder Applications */}
+          {isCreator && (
+            <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Verify Bidder Against This Tender
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+                    <span>Applicant Bidders &amp; Verification Queue ({applications.length})</span>
                   </h3>
-                  <p className="text-[11px] text-slate-500">
-                    Evaluating against: {tender.title}
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Trigger AI verification audits on submitted bidder dossiers and record final procurement qualification decisions.
                   </p>
                 </div>
               </div>
 
-              {/* Sample loader bar for quick testing */}
-              <div className="mb-4 p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-500/20 text-xs">
-                <div className="flex items-center gap-1.5 text-blue-700 dark:text-cyan-300 font-semibold mb-2">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Quick Load Demonstration Bidder:</span>
+              {applications.length === 0 ? (
+                <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800">
+                  <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    No bidder applications received yet
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Once published, eligible bidders can browse this tender in the Tender Library and submit their bids.
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleBidder('compliant')}
-                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold hover:bg-emerald-50 cursor-pointer"
-                  >
-                    Compliant (ABC Tech)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleBidder('medium')}
-                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-amber-950/60 border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-[11px] font-semibold hover:bg-amber-50 cursor-pointer"
-                  >
-                    Medium Risk (XYZ Sol)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSampleBidder('high')}
-                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-[11px] font-semibold hover:bg-rose-50 cursor-pointer"
-                  >
-                    High Risk (PQR Sys)
-                  </button>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold">
+                        <th className="pb-3 px-3">Bidder Name</th>
+                        <th className="pb-3 px-3">Submitted At</th>
+                        <th className="pb-3 px-3">Attached Evidence</th>
+                        <th className="pb-3 px-3">Audit Status</th>
+                        <th className="pb-3 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                      {applications.map((app) => {
+                        const isVerified = app.status === 'Verified';
+                        const isAppVerifying = verifyingAppId === app.id;
+
+                        return (
+                          <tr key={app.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                              {app.bidderName}
+                              {app.companyPan && (
+                                <span className="block text-[10px] text-slate-400">PAN: {app.companyPan}</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-slate-500">
+                              {app.submittedAt ? new Date(app.submittedAt).toLocaleDateString() : 'Draft'}
+                            </td>
+                            <td className="py-3 px-3 text-slate-600 dark:text-slate-400">
+                              {app.documents?.length || 0} document(s)
+                            </td>
+                            <td className="py-3 px-3">
+                              {isVerified ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Verified
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-cyan-400 border border-blue-500/20">
+                                  <Clock className="w-3 h-3" />
+                                  Awaiting Audit
+                                </span>
+                              )}
+                              {app.isOutdated && (
+                                <span className="ml-1 inline-flex items-center gap-0.5 text-[9px] text-purple-500 font-bold">
+                                  (Re-audit Needed)
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <div className="inline-flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isAppVerifying}
+                                  onClick={() => handleRunVerification(app.id)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 dark:bg-cyan-600 dark:hover:bg-cyan-500 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                >
+                                  {isAppVerifying ? (
+                                    <>
+                                      <div className="w-3 h-3 rounded-full border border-white border-t-transparent animate-spin" />
+                                      <span>Auditing...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Play className="w-3 h-3" />
+                                      <span>{isVerified ? 'Re-verify' : t('btnRunVerification', 'Run Verification')}</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {(app.latestVerificationId || app.verificationReport) && (
+                                  <Link
+                                    href={`/verifications/${app.latestVerificationId || app.verificationReport?.id}`}
+                                    className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-cyan-400 transition-colors"
+                                    title="View Audit Report"
+                                  >
+                                    <ExternalLink className="w-4 h-4" />
+                                  </Link>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* BIDDER APPLICATION MODAL */}
+      {applyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#071224] rounded-2xl border border-slate-200 dark:border-blue-500/25 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-blue-500/15 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {t('applyModalTitle', 'Bidder Application Form')}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Applying for: <span className="font-semibold text-slate-700 dark:text-slate-200">{tender.title}</span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApplyModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+              {appSuccess && (
+                <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-500/20 text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{appSuccess}</span>
+                </div>
+              )}
+
+              {appError && (
+                <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{appError}</span>
+                </div>
+              )}
+
+              {/* Company Credentials */}
+              <div className="space-y-3">
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                  1. Company Identity &amp; Tax Identifiers
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('bidderNameLabel', 'Bidder / Company Name')} *
+                    </label>
+                    <input
+                      type="text"
+                      value={bidderName}
+                      onChange={(e) => setBidderName(e.target.value)}
+                      required
+                      placeholder="e.g. ABC Technologies Pvt Ltd"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('bidderPanLabel', 'Company PAN')}
+                    </label>
+                    <input
+                      type="text"
+                      value={companyPan}
+                      onChange={(e) => setCompanyPan(e.target.value)}
+                      placeholder="e.g. AAACA9999P"
+                      maxLength={10}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 uppercase focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('bidderGstinLabel', 'Company GSTIN')}
+                    </label>
+                    <input
+                      type="text"
+                      value={companyGstin}
+                      onChange={(e) => setCompanyGstin(e.target.value)}
+                      placeholder="e.g. 27ABCDE1234F1Z5"
+                      maxLength={15}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 uppercase focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('bidderUdyamLabel', 'Udyam / MSME Registration')}
+                    </label>
+                    <input
+                      type="text"
+                      value={companyUdyam}
+                      onChange={(e) => setCompanyUdyam(e.target.value)}
+                      placeholder="e.g. UDYAM-MH-02-0012345"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 uppercase focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Average Annual Turnover (INR)
+                    </label>
+                    <input
+                      type="text"
+                      value={companyTurnover}
+                      onChange={(e) => setCompanyTurnover(e.target.value)}
+                      placeholder="e.g. INR 18.5 Crores"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <form onSubmit={handleVerifyBidder} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Bidder Organization Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ABC Technologies Pvt Ltd"
-                    value={bidderName}
-                    onChange={(e) => setBidderName(e.target.value)}
-                    className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs"
-                  />
-                </div>
-
+              {/* Upload Supporting Documents */}
+              <div className="space-y-2">
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                  2. Upload Supporting Evidence &amp; Certificates (PDF)
+                </span>
                 <MultiPdfUpload
                   files={bidderFiles}
                   onChange={setBidderFiles}
-                  isProcessing={verifying}
-                  label="Bidder Document PDFs (.pdf)"
-                  hint="Select or drag & drop 1–10 Bidder PDFs (Max 25MB each)"
-                  accentColor="emerald"
+                  label="Select or drag-and-drop Bid Submittal PDFs"
+                  hint="Attach GST, PAN, CA Turnover statement, OEM MAF, Work Orders, and Make in India declarations."
+                  maxFiles={10}
                 />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Or Paste Bidder Clauses / Submittal Text
-                  </label>
-                  <textarea
-                    rows={4}
-                    placeholder="Paste bidder credential text, GSTIN details, turnover excerpts, etc."
-                    value={bidderText}
-                    onChange={(e) => setBidderText(e.target.value)}
-                    className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs font-mono"
-                  />
-                </div>
+              {/* Direct Entry Clauses if any */}
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Direct Evidence Text / Clause Excerpts (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={bidderText}
+                  onChange={(e) => setBidderText(e.target.value)}
+                  placeholder="Paste direct credentials, declaration statements, or work order references..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:outline-hidden focus:border-blue-500"
+                />
+              </div>
 
-                {uploadError && (
-                  <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                    <span>{uploadError}</span>
-                  </div>
-                )}
+              {/* Mandatory Checklist Reminder */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                <span className="font-bold text-slate-800 dark:text-slate-200 block flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+                  <span>{t('mandatoryChecklistTitle', 'Mandatory Eligibility Clauses for this Tender')}</span>
+                </span>
+                <ul className="space-y-1 text-[11px] text-slate-600 dark:text-slate-400 list-disc list-inside">
+                  {(tender.requirements || [])
+                    .filter((r) => r.mandatory)
+                    .map((r) => (
+                      <li key={r.id}>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">{r.name}</span>
+                        {r.category ? ` (${r.category})` : ''}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={verifying}
-                    className="btn-primary inline-flex items-center gap-2 px-5 py-2 text-xs font-bold uppercase tracking-wider rounded-xl text-white disabled:opacity-50 cursor-pointer"
-                  >
-                    {verifying ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white/30 animate-spin border-t-white rounded-full" />
-                        <span>Running Comparative Audit...</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserCheck className="w-4 h-4" />
-                        <span>Run Verification</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 dark:border-blue-500/15 flex items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={() => setApplyModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer"
+              >
+                {t('btnCancel', 'Cancel')}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={submittingApp}
+                  onClick={() => handleApplySubmit(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Save className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{t('btnSaveDraft', 'Save Draft')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={submittingApp}
+                  onClick={() => handleApplySubmit(false)}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 dark:bg-cyan-600 dark:hover:bg-cyan-500 rounded-xl transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{submittingApp ? 'Submitting...' : t('btnSubmitApplication', 'Submit Application')}</span>
+                </button>
+              </div>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

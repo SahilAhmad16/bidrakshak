@@ -7,6 +7,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { LayoutDashboard, LogOut, Menu, X, ArrowRight, Bell, Cpu } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { useTheme } from './ThemeProvider';
+import { LanguageSelector } from './LanguageSelector';
+import { useLanguage } from '@/lib/i18n';
 
 const NOTIFICATIONS = [
   { id: 1, text: 'AI Engine processed 3 tenders today', time: '2h ago', color: 'bg-cyan-500' },
@@ -18,6 +20,7 @@ export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
   const { theme } = useTheme();
+  const { t } = useLanguage();
   const isDark = theme === 'dark';
 
   const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
@@ -89,32 +92,38 @@ export function Navbar() {
           </Link>
 
           {/* Desktop Nav Links */}
-          <div className="hidden md:flex items-center gap-7 text-[13px] font-medium text-slate-600 dark:text-slate-400">
+          <div className="hidden md:flex items-center gap-6 text-[13px] font-medium text-slate-600 dark:text-slate-400">
             <Link
               href="/"
               className={`hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200 ${
                 pathname === '/' ? 'text-blue-600 dark:text-cyan-400 font-semibold' : ''
               }`}
             >
-              Home
+              {t('navHome', 'Home')}
             </Link>
             <Link
-              href="/#features"
-              className="hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200"
+              href="/tenders"
+              className={`hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200 ${
+                pathname === '/tenders' ? 'text-blue-600 dark:text-cyan-400 font-semibold' : ''
+              }`}
             >
-              Verification Features
+              {t('navTenderLibrary', 'Tender Library')}
             </Link>
             <Link
-              href="/#how-it-works"
-              className="hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200"
+              href="/bidders"
+              className={`hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200 ${
+                pathname === '/bidders' ? 'text-blue-600 dark:text-cyan-400 font-semibold' : ''
+              }`}
             >
-              How It Works
+              {t('navBidderLibrary', 'Bidder Library')}
             </Link>
             <Link
               href="/dashboard"
-              className="hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200"
+              className={`hover:text-blue-600 dark:hover:text-cyan-400 transition-colors duration-200 ${
+                pathname === '/dashboard' ? 'text-blue-600 dark:text-cyan-400 font-semibold' : ''
+              }`}
             >
-              Dashboard
+              {t('navDashboard', 'Dashboard')}
             </Link>
           </div>
 
@@ -128,6 +137,9 @@ export function Navbar() {
               </span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 status-blink" />
             </div>
+
+            {/* Language Selector */}
+            <LanguageSelector variant="badge" />
 
             {/* Theme Toggle Button */}
             <ThemeToggle />

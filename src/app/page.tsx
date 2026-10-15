@@ -23,34 +23,46 @@ const COMPLIANCE_SOURCES = [
 
 const VERIFICATION_MODES = [
   {
-    type: 'tender', badge: 'Stage 1', title: 'Tender Creation',
-    description: 'Create tenders and extract isolated requirement benchmarks across statutory, financial, and technical criteria.',
-    icon: FileText, iconColor: 'text-[#00ff88]', iconBg: 'bg-[#00ff88]/10 border-[#00ff88]/30',
-    features: ['Isolated tender criteria', 'Turnover & statutory clauses', 'Zero cross-tender mixing'],
+    type: 'tender',
+    badge: 'Step 1',
+    title: 'Tender Creation & Publishing',
+    description: 'Procurement officers upload RFP specifications, extract clause criteria, review the baseline, and publish to the Tender Library.',
+    icon: FileText,
+    iconColor: 'text-[#00ff88]',
+    iconBg: 'bg-[#00ff88]/10 border-[#00ff88]/30',
+    features: ['Draft & review workflow', 'Extracted criteria baseline', 'Publish to Tender Library'],
     href: '/upload',
   },
   {
-    type: 'bid', badge: 'Stage 2', title: 'Bidder Management',
-    description: 'Host multiple bidders under each tender. Each bidder is audited independently against that tender\'s specific criteria.',
-    icon: Layers, iconColor: 'text-[#ff00ff]', iconBg: 'bg-[#ff00ff]/10 border-[#ff00ff]/30',
-    features: ['Multiple bidders per tender', 'Independent audit evaluation', 'Verification history log'],
-    href: '/upload',
-  },
-  {
-    type: 'complete', badge: 'Stage 3', title: 'Audit Report',
-    description: 'Requirement-by-requirement comparison table, deterministic compliance score, risk score (100 - compliance), and feedback collection.',
-    icon: ShieldCheck, iconColor: 'text-[#0088ff]', iconBg: 'bg-[#0088ff]/10 border-[#0088ff]/30',
-    features: ['Requirement-wise matrix', 'Risk Score = 100 - Compliance', 'Interactive report feedback'],
+    type: 'bid',
+    badge: 'Step 2',
+    title: 'Tender Library & Bidder Application',
+    description: 'Bidders browse open tenders, review eligibility requirements, and submit their compliance evidence and company credentials.',
+    icon: Layers,
+    iconColor: 'text-[#ff00ff]',
+    iconBg: 'bg-[#ff00ff]/10 border-[#ff00ff]/30',
+    features: ['Public tender discovery', 'Deadline enforcement', 'Mandatory clause checklist'],
     href: '/tenders',
+  },
+  {
+    type: 'complete',
+    badge: 'Step 3',
+    title: 'AI Verification & Officer Decision',
+    description: 'On-demand verification audits analyze actual PDF evidence against requirements, calculating compliance and recording final officer decisions.',
+    icon: ShieldCheck,
+    iconColor: 'text-[#0088ff]',
+    iconBg: 'bg-[#0088ff]/10 border-[#0088ff]/30',
+    features: ['Real document scanning', 'Critical risk failure gating', 'Officer decision audit trail'],
+    href: '/verifications',
   },
 ];
 
 const HOW_IT_WORKS = [
-  { step: '01', icon: FileText,      label: 'Create Tender',        desc: 'Define tender and extract isolated requirements.' },
-  { step: '02', icon: UploadCloud,   label: 'Upload Bidder',        desc: 'Add multiple bidders under the selected tender.' },
-  { step: '03', icon: Layers,        label: 'Clause Comparison',    desc: 'Requirement → Evidence → Status → Remarks.' },
-  { step: '04', icon: AlertTriangle, label: 'Score & Risk Rating',  desc: 'Score % & Risk (80-100 Low, 65-79 Med, 0-64 High).' },
-  { step: '05', icon: FileCheck,     label: 'Report & Feedback',    desc: 'Full audit report and interactive feedback collection.' },
+  { step: '01', icon: FileText,      label: 'Tender Creation',      desc: 'Officer uploads RFP & reviews extracted criteria baseline.' },
+  { step: '02', icon: Layers,        label: 'Tender Library',       desc: 'Tender is published for public discovery and bidder access.' },
+  { step: '03', icon: UploadCloud,   label: 'Bidder Applies',       desc: 'Bidder submits application with supporting credentials.' },
+  { step: '04', icon: Cpu,           label: 'AI Verification',      desc: 'Clause-by-clause evaluation of documents and expiry dates.' },
+  { step: '05', icon: ShieldCheck,   label: 'Officer Decision',     desc: 'Final procurement qualification decision recorded with audit log.' },
 ];
 
 function AIComplianceEngine() {

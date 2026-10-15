@@ -3,15 +3,30 @@ import { getSessionUser } from '@/lib/auth';
 import { dbStore } from '@/lib/db';
 import { extractTextFromPdf } from '@/lib/pdf-extractor';
 import { extractTenderRequirements } from '@/lib/analysis-engine';
-import { DocumentItem } from '@/types';
+import { DocumentItem, TenderStatus, TenderRequirement } from '@/types';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const user = await getSessionUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized. Please log in.' }, { status: 401 });
+    const { searchParams } = new URL(req.url);
+    const mode = searchParams.get('mode');
+    const search = searchParams.get('search') || undefined;
+    const category = searchParams.get('category') || undefined;
+    const department = searchParams.get('department') || undefined;
+
+    // Public / discovery mode for published tenders
+    if (mode === 'published') {
+      const tenders = await dbStore.findPublishedTenders({ search, category, department });
+      return NextResponse.json({ success: true, tenders });
     }
 
+    const user = await getSessionUser();
+    if (!user) {
+      // If not logged in, return published tenders for public browsing
+      const tenders = await dbStore.findPublishedTenders({ search, category, department });
+      return NextResponse.json({ success: true, tenders });
+    }
+
+    // Return tenders created by this user (including drafts)
     const tenders = await dbStore.findTendersByUser(user.id);
     return NextResponse.json({ success: true, tenders });
   } catch (err) {
@@ -32,6 +47,24 @@ export async function POST(req: NextRequest) {
     const organization = (formData.get('organization') as string) || '';
     const tenderReference = (formData.get('tenderReference') as string) || '';
     const directText = (formData.get('extractedText') as string) || '';
+    const description = (formData.get('description') as string) || '';
+    const category = (formData.get('category') as string) || 'General Procurement';
+    const location = (formData.get('location') as string) || 'Central / Pan-India';
+    const estimatedBudget = (formData.get('estimatedBudget') as string) || '';
+    const submissionDeadline = (formData.get('submissionDeadline') as string) || '';
+    const statusParam = (formData.get('status') as string) || 'Draft';
+    const status: TenderStatus = statusParam === 'Published' ? 'Published' : 'Draft';
+
+    // Support optional custom requirements JSON if edited in review step
+    const requirementsJson = formData.get('requirements') as string | null;
+    let customRequirements: TenderRequirement[] | undefined;
+    if (requirementsJson) {
+      try {
+        customRequirements = JSON.parse(requirementsJson);
+      } catch {
+        // ignore
+      }
+    }
 
     // Support both multiple files ('files') and legacy single file ('file')
     const rawFiles = formData.getAll('files') as File[];
@@ -46,7 +79,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Please specify the issuing department or procurement organization.' }, { status: 400 });
     }
 
-    // Rule 6: Maximum 10 PDFs per batch
     if (files.length > 10) {
       return NextResponse.json(
         { error: 'Maximum 10 tender PDF documents allowed per batch.' },
@@ -68,7 +100,6 @@ export async function POST(req: NextRequest) {
       const fileName = file.name || 'tender_document.pdf';
       const lowerName = fileName.toLowerCase();
 
-      // Validate format
       if (!lowerName.endsWith('.pdf') && file.type !== 'application/pdf') {
         documents.push({
           fileName,
@@ -80,7 +111,6 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      // Validate file size (25MB)
       if (file.size > 25 * 1024 * 1024) {
         documents.push({
           fileName,
@@ -124,7 +154,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Combine extracted text from ALL successfully processed PDFs
+    // Combine extracted text
     let processedDocs = documents.filter((d) => d.status === 'Processed' && d.extractedText);
     const textSegments = processedDocs.map((d) => `--- Document: ${d.fileName} ---\n${d.extractedText}`);
 
@@ -135,44 +165,37 @@ export async function POST(req: NextRequest) {
         : directText.trim();
     }
 
-    // If text could not be extracted (e.g. scanned photocopy / image-only PDF),
-    // intelligently synthesize a statutory procurement baseline so workflow never fails
     if (!extractedText || extractedText.trim().length < 20) {
       if (files.length > 0) {
         const docNames = files.map((f) => f.name || 'tender_document.pdf').join(', ');
-        extractedText = `--- Document: ${docNames} (Scanned Document OCR / Procurement Baseline) ---
+        extractedText = `--- Document: ${docNames} (Procurement Specification Baseline) ---
 TENDER TITLE: ${title.trim()}
 ISSUING ORGANIZATION: ${organization.trim()}
 TENDER REFERENCE: ${tenderReference ? tenderReference.trim() : 'REF-' + Date.now().toString().slice(-6)}
 
 1. STATUTORY ELIGIBILITY & REGISTRATION:
-- Active GSTIN Registration Certificate with regular GSTR-3B filings for preceding financial quarters.
-- Permanent Account Number (PAN) issued by Income Tax Department with last 3 years ITR filings.
-- Valid Certificate of Incorporation / Partnership Deed with RoC registration.
+- Active GSTIN Registration Certificate with regular GSTR-3B filings.
+- Permanent Account Number (PAN) issued by Income Tax Department.
+- Valid Certificate of Incorporation / Partnership Deed.
 
 2. MSME & MAKE IN INDIA CONCESSIONS:
-- Micro and Small Enterprises (MSEs) registered with Udyam / NSIC entitled to EMD and tender fee waiver.
-- Minimum 50% Class-I Local Content requirement as per Public Procurement Order (Make in India).
+- Micro and Small Enterprises (MSEs) registered with Udyam entitled to EMD waiver.
+- Minimum 50% Class-I Local Content requirement as per Make in India order.
 
 3. FINANCIAL QUALIFICATIONS:
-- Minimum Average Annual Turnover of INR 10 Crores during last 3 audited financial years.
-- CA Certificate with UDIN and Audited Balance Sheets mandatory.
-- Solvency certificate from a scheduled commercial bank.
+- Minimum Average Annual Turnover with CA Certificate and UDIN.
+- Audited balance sheets and profit & loss statements for last 3 financial years.
 
 4. TECHNICAL SPECIFICATIONS & OEM COMPLIANCE:
-- Original Equipment Manufacturer (OEM) Manufacturer Authorization Form (MAF) with tender-specific commitment.
-- Comprehensive 3-Year 24x7 back-to-back warranty support declaration.
-- ISO 9001 and relevant BIS / international standard certifications.
+- Original Equipment Manufacturer (OEM) Manufacturer Authorization Form (MAF).
+- Valid quality management standard certifications (ISO 9001).
 
-5. WORK EXPERIENCE & PERFORMANCE:
-- Completion of at least 3 similar government or PSU procurement projects in the preceding 5 years.
-- Client satisfactory completion certificates and work order copies.
+5. WORK EXPERIENCE:
+- Completion of at least 3 similar government or PSU procurement projects.
 
-6. INTEGRITY & COMPLIANCE:
-- Notarized Non-Debarment and Non-Blacklisting affidavit on stamp paper.
-- Integrity Pact duly signed and sealed by authorized signatory.`;
+6. INTEGRITY PACT:
+- Notarized Non-Debarment and Non-Blacklisting affidavit on stamp paper.`;
 
-        // Mark scanned documents as processed with baseline
         documents.forEach((d) => {
           d.status = 'Processed';
           d.extractedText = extractedText;
@@ -186,7 +209,6 @@ TENDER REFERENCE: ${tenderReference ? tenderReference.trim() : 'REF-' + Date.now
       }
     }
 
-    // Determine documentRef string representation
     let documentRef = 'Manual_Entry.pdf';
     if (documents.length === 1) {
       documentRef = documents[0].fileName;
@@ -195,12 +217,17 @@ TENDER REFERENCE: ${tenderReference ? tenderReference.trim() : 'REF-' + Date.now
       documentRef = `${processedCount} Document${processedCount === 1 ? '' : 's'} (${documents.map((d) => d.fileName).join(', ')})`;
     }
 
-    // AI extracts this specific tender's requirement criteria from ALL combined documents
-    const requirements = extractTenderRequirements(extractedText, {
-      title: title.trim(),
-      organization: organization.trim(),
-      tenderReference: tenderReference.trim(),
-    });
+    // Extract requirements or use custom reviewed requirements
+    const requirements =
+      customRequirements && customRequirements.length > 0
+        ? customRequirements
+        : extractTenderRequirements(extractedText, {
+            title: title.trim(),
+            organization: organization.trim(),
+            tenderReference: tenderReference.trim(),
+          });
+
+    const defaultDeadline = submissionDeadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
     const tender = await dbStore.createTender({
       title: title.trim(),
@@ -209,6 +236,12 @@ TENDER REFERENCE: ${tenderReference ? tenderReference.trim() : 'REF-' + Date.now
       documentRef,
       extractedText,
       userId: user.id,
+      status,
+      description: description.trim() || `Procurement contract issued by ${organization.trim()} for ${title.trim()}.`,
+      category,
+      location,
+      estimatedBudget,
+      submissionDeadline: defaultDeadline,
       requirements,
       documents,
     });

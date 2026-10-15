@@ -12,6 +12,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { LanguageProvider } from '@/lib/i18n';
+
 export default function RootLayout({
   children,
 }: {
@@ -29,8 +31,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-[var(--bg-base)] text-[var(--text-primary)] antialiased transition-colors duration-200 selection:bg-blue-600/30 selection:text-blue-600 dark:selection:text-cyan-300">
         <ThemeProvider>
-          {children}
-          <AIChatAssistant />
+          <LanguageProvider>
+            {children}
+            <AIChatAssistant />
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>

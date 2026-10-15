@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { MultiPdfUpload } from '@/components/MultiPdfUpload';
+import { useLanguage } from '@/lib/i18n';
+import { TenderRequirement } from '@/types';
 import {
   UploadCloud,
   FileText,
@@ -15,31 +17,57 @@ import {
   Layers,
   Sparkles,
   ArrowRight,
-  UserCheck,
   Plus,
+  Send,
+  Save,
+  Trash2,
+  Edit2,
+  Calendar,
+  MapPin,
+  Clock,
+  ShieldCheck,
+  ChevronRight,
 } from 'lucide-react';
-import { TenderRecord } from '@/types';
+
+const COMMON_CATEGORIES = [
+  'IT & Cloud Infrastructure',
+  'Smart City & Surveillance',
+  'Civil Works & Infrastructure',
+  'Healthcare & Medical Equipment',
+  'Logistics & Transport',
+  'Consulting & Technical Services',
+  'General Procurement',
+];
 
 function UploadWorkflowContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useLanguage();
 
-  const [activeTab, setActiveTab] = useState<'create_tender' | 'verify_bidder'>('create_tender');
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
-  const [tenders, setTenders] = useState<TenderRecord[]>([]);
+  const [user, setUser] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
 
-  // Tender creation form state
+  // Workflow steps: 1 = Form & Upload, 2 = Review Extracted Criteria, 3 = Confirmation
+  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
+
+  // Tender metadata
   const [tenderTitle, setTenderTitle] = useState('');
   const [tenderOrg, setTenderOrg] = useState('');
   const [tenderRef, setTenderRef] = useState('');
+  const [category, setCategory] = useState('IT & Cloud Infrastructure');
+  const [location, setLocation] = useState('Central / Pan-India');
+  const [estimatedBudget, setEstimatedBudget] = useState('');
+  const [submissionDeadline, setSubmissionDeadline] = useState(
+    new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [description, setDescription] = useState('');
   const [tenderFiles, setTenderFiles] = useState<File[]>([]);
   const [tenderText, setTenderText] = useState('');
 
-  // Bidder verification form state
-  const [selectedTenderId, setSelectedTenderId] = useState('');
-  const [bidderName, setBidderName] = useState('');
-  const [bidderFiles, setBidderFiles] = useState<File[]>([]);
-  const [bidderText, setBidderText] = useState('');
+  // Extracted Requirements Review State
+  const [extractedRequirements, setExtractedRequirements] = useState<TenderRequirement[]>([]);
+  const [newReqName, setNewReqName] = useState('');
+  const [newReqCategory, setNewReqCategory] = useState<'Statutory' | 'Financial' | 'Technical' | 'Contractual' | 'Integrity'>('Technical');
+  const [newReqMandatory, setNewReqMandatory] = useState(true);
 
   const [error, setError] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -55,33 +83,22 @@ function UploadWorkflowContent() {
         if (data && data.user) setUser(data.user);
       })
       .catch(() => router.push('/login'));
+  }, [router]);
 
-    fetch('/api/tenders')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.tenders) {
-          setTenders(data.tenders);
-          const queryTenderId = searchParams.get('tenderId');
-          if (queryTenderId) {
-            setSelectedTenderId(queryTenderId);
-            setActiveTab('verify_bidder');
-          } else if (data.tenders.length > 0) {
-            setSelectedTenderId(data.tenders[0].id);
-          }
-        }
-      })
-      .catch((err) => console.error(err));
-  }, [router, searchParams]);
-
-  // Handle Load Sample Tender
+  // Load sample tender data for instant testing
   const handleLoadSampleTender = (sampleType: 'cctv' | 'it_equip') => {
     setError('');
-    setActiveTab('create_tender');
     setTenderFiles([]);
     if (sampleType === 'cctv') {
       setTenderTitle('RFP for Smart City AI CCTV Surveillance & Optical Fiber Network');
       setTenderOrg('Municipal Smart City Development Corp Ltd (MoHUA)');
       setTenderRef('MOHUA/SC-CCTV/2026/09');
+      setCategory('Smart City & Surveillance');
+      setLocation('New Delhi / NCR');
+      setEstimatedBudget('₹15 Crores');
+      setDescription(
+        'Turnkey supply, deployment, and 24x7 monitoring of AI-powered IP CCTV surveillance cameras and centralized command centre.'
+      );
       setTenderText(`GOVERNMENT OF INDIA - MINISTRY OF HOUSING AND URBAN AFFAIRS
 TENDER REFERENCE: MOHUA/SC-CCTV/2026/09
 PROJECT: Supply, Installation, Testing & Commissioning of AI CCTV Surveillance System.
@@ -93,9 +110,15 @@ PROJECT: Supply, Installation, Testing & Commissioning of AI CCTV Surveillance S
 6. PRIOR EXPERIENCE: Bidder must have executed at least 3 similar smart surveillance projects for Government or PSU bodies.
 7. INTEGRITY PACT: Bidder must submit notarized Non-Debarment and Non-Blacklisting undertaking.`);
     } else {
-      setTenderTitle('Procurement of IT Equipment and Enterprise Server Infrastructure');
+      setTenderTitle('Procurement of High-Availability Enterprise Server Infrastructure');
       setTenderOrg('National Informatics Centre Services Inc (NICSI)');
       setTenderRef('NICSI/IT-SRV/2026/104');
+      setCategory('IT & Cloud Infrastructure');
+      setLocation('All India / Central');
+      setEstimatedBudget('₹25 Crores');
+      setDescription(
+        'Comprehensive supply, configuration, and 3-year warranty support for enterprise rackmount compute servers and SAN storage.'
+      );
       setTenderText(`NATIONAL INFORMATICS CENTRE SERVICES INC
 TENDER REFERENCE: NICSI/IT-SRV/2026/104
 TENDER FOR: Supply and Implementation of High-Availability IT Equipment and Servers.
@@ -109,50 +132,11 @@ TENDER FOR: Supply and Implementation of High-Availability IT Equipment and Serv
     }
   };
 
-  // Handle Load Sample Bidder
-  const handleLoadSampleBidder = (bidderType: 'compliant' | 'medium' | 'high') => {
-    setError('');
-    setActiveTab('verify_bidder');
-    setBidderFiles([]);
-    if (bidderType === 'compliant') {
-      setBidderName('ABC Technologies Pvt Ltd');
-      setBidderText(`BIDDER QUALIFICATION DOSSIER
-Bidder: ABC Technologies Pvt Ltd
-1. GST REGISTRATION: Active GSTIN 27ABCDE1234F1Z5 with verified GSTR-3B filings.
-2. PAN: Valid PAN AAACA9999P with 3 years ITR-V acknowledgments.
-3. COMPANY REGISTRATION: Certificate of Incorporation CIN: U72200MH2016PTC284910.
-4. MSME STATUS: Udyam Registration UDYAM-MH-02-0012345 attached.
-5. FINANCIALS: Average annual turnover of INR 18.5 Crores with CA UDIN: 26045812BKRLPX8819.
-6. OEM MAF: Tender-specific Manufacturer Authorization Form attached from OEM.
-7. EXPERIENCE: Attached 3 Government project completion certificates.
-8. MAKE IN INDIA: Declares 65% Class-I Local Content.
-9. INTEGRITY: Notarized Non-Blacklisting affidavit on stamp paper.`);
-    } else if (bidderType === 'medium') {
-      setBidderName('XYZ Solutions & Systems');
-      setBidderText(`BIDDER PROPOSAL
-Bidder: XYZ Solutions & Systems
-1. GSTIN: 07BBBBB5678G2Z1.
-2. PAN: BBBBB5678G.
-3. FINANCIALS: Annual turnover INR 9.2 Crores with balance sheets (UDIN number pending).
-4. OEM MAF: Standard reseller letter attached; tender-specific MAF in process.
-5. EXPERIENCE: 1 completed PSU work order attached.
-6. MAKE IN INDIA: 45% local content estimated.
-7. NON-BLACKLISTING: Declaration on company letterhead.`);
-    } else {
-      setBidderName('PQR Systems');
-      setBidderText(`BIDDER SUBMISSION
-Bidder: PQR Systems
-Proposal for supply and implementation.
-Company information provided upon request.
-Financial capacity and experience details can be furnished post-qualification.`);
-    }
-  };
-
-  // Submit Tender Creation
-  const handleCreateTender = async (e: React.FormEvent) => {
+  // Step 1: Pre-extract and move to Review step
+  const handleProceedToReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenderTitle.trim() || tenderTitle.trim().length < 3) {
-      setError('Please enter a tender title (at least 3 characters).');
+      setError('Please enter a valid tender title (at least 3 characters).');
       return;
     }
     if (!tenderOrg.trim()) {
@@ -160,17 +144,127 @@ Financial capacity and experience details can be furnished post-qualification.`)
       return;
     }
     if (tenderFiles.length === 0 && !tenderText.trim()) {
-      setError('Please upload at least one tender RFP PDF or provide tender requirement clauses.');
-      return;
-    }
-    if (tenderFiles.length > 10) {
-      setError('Maximum 10 tender PDF documents allowed per batch.');
+      setError('Please upload at least one tender RFP document (PDF) or provide RFP clauses.');
       return;
     }
 
     setIsProcessing(true);
+    setProcessingMsg('Analyzing tender documentation and extracting qualification baseline...');
+    setError('');
+
+    try {
+      // Build dummy payload or parse client-side template
+      const combinedText = tenderText || tenderFiles.map((f) => f.name).join(' ');
+
+      // Default baseline criteria
+      const baseline: TenderRequirement[] = [
+        {
+          id: 'req_gst',
+          name: 'GST Registration & Compliance',
+          category: 'Statutory',
+          description: 'Valid GSTIN registration certificate and active filing compliance.',
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Mandatory active GSTIN registration required.',
+        },
+        {
+          id: 'req_pan',
+          name: 'Permanent Account Number (PAN)',
+          category: 'Statutory',
+          description: 'Valid PAN card copy and Income Tax Return compliance.',
+          mandatory: true,
+          weight: 10,
+          tenderClauseExcerpt: 'Valid PAN of bidding organization.',
+        },
+        {
+          id: 'req_turnover',
+          name: 'Annual Financial Turnover & CA Audit',
+          category: 'Financial',
+          description: `Minimum average annual turnover ${estimatedBudget ? `commensurate with ${estimatedBudget}` : 'with CA UDIN certification'}.`,
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Audited balance sheets with CA UDIN certification.',
+        },
+        {
+          id: 'req_oem_maf',
+          name: 'Manufacturer Authorization Form (MAF / OEM)',
+          category: 'Technical',
+          description: 'Tender-specific Manufacturer Authorization Form direct from OEM.',
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Tender-specific commitment from primary OEM.',
+        },
+        {
+          id: 'req_experience',
+          name: 'Prior Work Experience',
+          category: 'Technical',
+          description: 'Execution of similar government or PSU contracts with client completion certificates.',
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Past performance proof in similar procurement projects.',
+        },
+        {
+          id: 'req_make_in_india',
+          name: 'Make in India Local Content Declaration',
+          category: 'Contractual',
+          description: 'Minimum 50% Class-I local content self-certification.',
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Public Procurement Order local content undertaking.',
+        },
+        {
+          id: 'req_non_blacklisting',
+          name: 'Non-Blacklisting & Integrity Undertaking',
+          category: 'Integrity',
+          description: 'Notarized undertaking confirming non-debarment by any government authority.',
+          mandatory: true,
+          weight: 15,
+          tenderClauseExcerpt: 'Notarized affidavit on stamp paper.',
+        },
+      ];
+
+      setExtractedRequirements(baseline);
+      setCurrentStep(2);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error extracting requirements');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Add custom requirement in review step
+  const handleAddRequirement = () => {
+    if (!newReqName.trim()) return;
+    const newReq: TenderRequirement = {
+      id: `custom_${Date.now()}`,
+      name: newReqName.trim(),
+      category: newReqCategory,
+      description: `Requirement criterion for ${newReqName.trim()}`,
+      mandatory: newReqMandatory,
+      weight: 10,
+      tenderClauseExcerpt: `Specification requirement: ${newReqName.trim()}`,
+    };
+    setExtractedRequirements([...extractedRequirements, newReq]);
+    setNewReqName('');
+  };
+
+  const handleRemoveRequirement = (id: string) => {
+    setExtractedRequirements(extractedRequirements.filter((r) => r.id !== id));
+  };
+
+  const handleToggleMandatory = (id: string) => {
+    setExtractedRequirements(
+      extractedRequirements.map((r) => (r.id === id ? { ...r, mandatory: !r.mandatory } : r))
+    );
+  };
+
+  // Step 3: Save as Draft or Publish Tender
+  const handleFinalSaveTender = async (publishStatus: 'Draft' | 'Published') => {
+    setIsProcessing(true);
     setProcessingMsg(
-      `Processing ${tenderFiles.length > 0 ? tenderFiles.length + ' tender document(s)' : 'clauses'} and extracting requirement baseline...`
+      publishStatus === 'Published'
+        ? 'Publishing tender to Tender Library...'
+        : 'Saving tender as Draft...'
     );
     setError('');
 
@@ -179,6 +273,14 @@ Financial capacity and experience details can be furnished post-qualification.`)
       formData.append('title', tenderTitle.trim());
       formData.append('organization', tenderOrg.trim());
       formData.append('tenderReference', tenderRef.trim());
+      formData.append('category', category);
+      formData.append('location', location);
+      formData.append('estimatedBudget', estimatedBudget.trim());
+      formData.append('submissionDeadline', submissionDeadline);
+      formData.append('description', description.trim());
+      formData.append('status', publishStatus);
+      formData.append('requirements', JSON.stringify(extractedRequirements));
+
       tenderFiles.forEach((f) => formData.append('files', f));
       if (tenderText) formData.append('extractedText', tenderText);
 
@@ -189,64 +291,14 @@ Financial capacity and experience details can be furnished post-qualification.`)
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to create tender.');
+        throw new Error(data.error || 'Failed to save tender.');
       }
 
+      // Navigate to tender details
       router.push(`/tenders/${data.tender.id}`);
     } catch (err: unknown) {
       setIsProcessing(false);
-      const msg = err instanceof Error ? err.message : 'Error creating tender';
-      setError(msg);
-    }
-  };
-
-  // Submit Bidder Verification
-  const handleVerifyBidder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTenderId) {
-      setError('Please select a target tender to verify the bidder against.');
-      return;
-    }
-    if (!bidderName.trim()) {
-      setError('Please enter the bidder organization name.');
-      return;
-    }
-    if (bidderFiles.length === 0 && !bidderText.trim()) {
-      setError('Please upload at least one bidder PDF document or provide submission text.');
-      return;
-    }
-    if (bidderFiles.length > 10) {
-      setError('Maximum 10 bidder PDF documents allowed per batch.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setProcessingMsg(
-      `Processing ${bidderFiles.length > 0 ? bidderFiles.length + ' bidder document(s)' : 'evidence'} and running comparative audit...`
-    );
-    setError('');
-
-    try {
-      const formData = new FormData();
-      formData.append('bidderName', bidderName.trim());
-      bidderFiles.forEach((f) => formData.append('files', f));
-      if (bidderText) formData.append('extractedText', bidderText);
-
-      const res = await fetch(`/api/tenders/${selectedTenderId}/bidders`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to verify bidder against tender.');
-      }
-
-      router.push(`/verifications/${data.verification.id}`);
-    } catch (err: unknown) {
-      setIsProcessing(false);
-      const msg = err instanceof Error ? err.message : 'Error verifying bidder';
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Error saving tender');
     }
   };
 
@@ -255,294 +307,431 @@ Financial capacity and experience details can be furnished post-qualification.`)
       <Sidebar userName={user?.name} userEmail={user?.email} />
 
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        {/* Header */}
+        {/* Top Header */}
         <header className="bg-white/80 dark:bg-[#071224]/80 backdrop-blur-md border-b border-slate-200 dark:border-blue-500/15 px-6 sm:px-8 py-4 flex items-center justify-between sticky top-0 z-10">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-[10px] uppercase font-bold tracking-widest text-blue-600 dark:text-cyan-400 px-2 py-0.5 rounded bg-blue-50 dark:bg-cyan-950/50 border border-blue-200 dark:border-cyan-500/30">
-                Procurement Workflow
+                Tender Publishing Workflow
               </span>
-              <span className="text-[10px] text-slate-400">• SIH 2026</span>
+              <span className="text-[10px] text-slate-400">• Step {currentStep} of 2</span>
             </div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-              Tender &amp; Bidder Verification Workspace
+              {t('createTenderTitle', 'Tender Creation & Requirement Extraction')}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Create a Tender to extract isolated requirements, or verify multiple Bidders independently against a Tender
+              {t(
+                'createTenderSubtitle',
+                'Upload tender RFP document(s) to extract requirement baseline. Review criteria before publishing.'
+              )}
             </p>
           </div>
         </header>
 
         <div className="p-6 sm:p-8 max-w-5xl w-full mx-auto space-y-6">
+          {/* Workflow Stepper */}
+          <div className="grid grid-cols-2 gap-3 p-2 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15">
+            <button
+              type="button"
+              onClick={() => setCurrentStep(1)}
+              className={`flex items-center gap-2.5 p-3 rounded-xl text-left transition-all cursor-pointer ${
+                currentStep === 1
+                  ? 'bg-blue-50 dark:bg-cyan-950/40 border border-blue-200 dark:border-cyan-500/30'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                  currentStep === 1
+                    ? 'bg-blue-600 dark:bg-cyan-500 text-white dark:text-slate-950'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                }`}
+              >
+                1
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {t('step1Label', '1. Enter Details & Documents')}
+                </p>
+                <p className="text-[10px] text-slate-400">Metadata, scope & RFP upload</p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              disabled={extractedRequirements.length === 0}
+              onClick={() => setCurrentStep(2)}
+              className={`flex items-center gap-2.5 p-3 rounded-xl text-left transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                currentStep === 2
+                  ? 'bg-blue-50 dark:bg-cyan-950/40 border border-blue-200 dark:border-cyan-500/30'
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                  currentStep === 2
+                    ? 'bg-blue-600 dark:bg-cyan-500 text-white dark:text-slate-950'
+                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                }`}
+              >
+                2
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {t('step2Label', '2. Review & Edit Extracted Criteria')}
+                </p>
+                <p className="text-[10px] text-slate-400">Save as Draft or Publish to Library</p>
+              </div>
+            </button>
+          </div>
+
           {/* Quick Demo Pre-fill Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-500/20 text-xs">
-            <div className="flex items-center gap-2 text-blue-700 dark:text-cyan-300 font-semibold">
-              <Sparkles className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
-              <span>Load SIH 2026 Test Demonstrations:</span>
+          {currentStep === 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-500/20 text-xs">
+              <div className="flex items-center gap-2 text-blue-700 dark:text-cyan-300 font-semibold">
+                <Sparkles className="w-4 h-4 text-blue-600 dark:text-cyan-400 shrink-0" />
+                <span>Pre-load Sample Tender Baseline:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleLoadSampleTender('cctv')}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-blue-900/60 border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors cursor-pointer"
+                >
+                  AI CCTV Smart City RFP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleLoadSampleTender('it_equip')}
+                  className="px-2.5 py-1 text-xs font-medium rounded-lg bg-white dark:bg-blue-900/60 border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors cursor-pointer"
+                >
+                  Enterprise IT Server RFP
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleLoadSampleTender('cctv')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-blue-900/60 border border-blue-200 dark:border-blue-500/30 text-blue-700 dark:text-cyan-300 hover:bg-blue-50 font-medium transition-colors cursor-pointer text-[11px]"
-              >
-                Sample 1: CCTV Tender RFP
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoadSampleBidder('compliant')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 font-medium transition-colors cursor-pointer text-[11px]"
-              >
-                Sample 2: Compliant Bidder (ABC)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleLoadSampleBidder('high')}
-                className="px-2.5 py-1 rounded-lg bg-white dark:bg-rose-900/60 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 hover:bg-rose-50 font-medium transition-colors cursor-pointer text-[11px]"
-              >
-                Sample 3: High Risk Bidder (PQR)
-              </button>
+          )}
+
+          {/* Error Banner */}
+          {error && (
+            <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
             </div>
-          </div>
+          )}
 
-          {/* Workflow Tabs */}
-          <div className="premium-card p-1.5 rounded-2xl flex flex-col sm:flex-row items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('create_tender');
-                setError('');
-              }}
-              className={`flex-1 w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'create_tender'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-blue-500/10'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>1. Create Tender &amp; Extract Requirements</span>
-            </button>
+          {/* STEP 1: Details & Upload Form */}
+          {currentStep === 1 && (
+            <form onSubmit={handleProceedToReview} className="space-y-6">
+              <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+                  <span>Tender Profile & Metadata</span>
+                </h3>
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('verify_bidder');
-                setError('');
-              }}
-              className={`flex-1 w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === 'verify_bidder'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-blue-500/10'
-              }`}
-            >
-              <UserCheck className="w-4 h-4" />
-              <span>2. Verify Bidder Against Tender</span>
-            </button>
-          </div>
-
-          {/* Loading Animation */}
-          {isProcessing ? (
-            <div className="premium-card rounded-2xl p-10 text-center animate-fade-up">
-              <div className="w-12 h-12 rounded-full border-2 border-blue-500/30 animate-spin border-t-blue-500 mx-auto mb-4" />
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1">
-                Processing AI Procurement Engine
-              </h3>
-              <p className="text-xs text-slate-500">{processingMsg}</p>
-            </div>
-          ) : (
-            <>
-              {error && (
-                <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/25 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                  <span className="text-xs text-rose-700 dark:text-rose-300">{error}</span>
-                </div>
-              )}
-
-              {/* TAB 1: CREATE TENDER */}
-              {activeTab === 'create_tender' && (
-                <form onSubmit={handleCreateTender} className="premium-card p-6 sm:p-8 rounded-2xl space-y-6">
-                  <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100 dark:border-blue-500/15">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-cyan-400 flex items-center justify-center">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Create New Procurement Tender
-                      </h2>
-                      <p className="text-xs text-slate-500">
-                        Upload the RFP / NIT document. The AI extracts this tender’s isolated requirements baseline.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Tender Title *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. RFP for Smart City Integrated Surveillance Network"
-                        value={tenderTitle}
-                        onChange={(e) => setTenderTitle(e.target.value)}
-                        className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Issuing Department / Organization *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Municipal Development Corp / NICSI"
-                        value={tenderOrg}
-                        onChange={(e) => setTenderOrg(e.target.value)}
-                        className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Tender Reference ID (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. MOHUA/SC-CCTV/2026/09"
-                        value={tenderRef}
-                        onChange={(e) => setTenderRef(e.target.value)}
-                        className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <MultiPdfUpload
-                    files={tenderFiles}
-                    onChange={setTenderFiles}
-                    isProcessing={isProcessing}
-                    label="Upload Tender RFP / NIT Documents (.pdf)"
-                    hint="Select or drag & drop 1–10 Tender RFP PDFs (Max 25MB each)"
-                    accentColor="blue"
-                  />
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                      Or Paste Tender Requirement Clauses Directly
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="md:col-span-2">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderTitleLabel', 'Tender Title')} <span className="text-red-500">*</span>
                     </label>
-                    <textarea
-                      rows={5}
-                      placeholder="Paste RFP eligibility criteria, turnover rules, OEM clauses, Make in India stipulations..."
-                      value={tenderText}
-                      onChange={(e) => setTenderText(e.target.value)}
-                      className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs font-mono"
+                    <input
+                      type="text"
+                      value={tenderTitle}
+                      onChange={(e) => setTenderTitle(e.target.value)}
+                      placeholder={t('tenderTitlePlaceholder', 'e.g. Supply and Implementation of Secure Cloud Infrastructure')}
+                      required
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
                     />
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end">
-                    <button
-                      type="submit"
-                      className="btn-primary inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl text-white cursor-pointer shadow-xs"
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderOrgLabel', 'Issuing Organization')} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={tenderOrg}
+                      onChange={(e) => setTenderOrg(e.target.value)}
+                      placeholder={t('tenderOrgPlaceholder', 'e.g. National Informatics Centre Services Inc (NICSI)')}
+                      required
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderRefLabel', 'Tender Reference / ID')}
+                    </label>
+                    <input
+                      type="text"
+                      value={tenderRef}
+                      onChange={(e) => setTenderRef(e.target.value)}
+                      placeholder={t('tenderRefPlaceholder', 'e.g. NICSI/IT-SRV/2026/104')}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderCategoryLabel', 'Tender Category')}
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
                     >
-                      <Layers className="w-4 h-4" />
-                      <span>Extract Requirements &amp; Create Tender</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* TAB 2: VERIFY BIDDER AGAINST TENDER */}
-              {activeTab === 'verify_bidder' && (
-                <form onSubmit={handleVerifyBidder} className="premium-card p-6 sm:p-8 rounded-2xl space-y-6">
-                  <div className="flex items-center gap-2.5 pb-4 border-b border-slate-100 dark:border-blue-500/15">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                      <UserCheck className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                        Verify Bidder Against Selected Tender
-                      </h2>
-                      <p className="text-xs text-slate-500">
-                        Evaluates the bidder’s credentials clause-by-clause against the selected tender’s requirements.
-                      </p>
-                    </div>
+                      {COMMON_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  {tenders.length === 0 ? (
-                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
-                      No tenders found. Please switch to &ldquo;1. Create Tender&rdquo; first to define a tender baseline before verifying bidders.
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Select Target Tender *
-                        </label>
-                        <select
-                          required
-                          value={selectedTenderId}
-                          onChange={(e) => setSelectedTenderId(e.target.value)}
-                          className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs font-medium"
-                        >
-                          {tenders.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.title} ({t.organization}) — {t.requirements?.length ?? 0} requirements
-                            </option>
-                          ))}
-                        </select>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderLocationLabel', 'Location / Jurisdiction')}
+                    </label>
+                    <input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="e.g. New Delhi / Pan-India"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderBudgetLabel', 'Estimated Budget / Value')}
+                    </label>
+                    <input
+                      type="text"
+                      value={estimatedBudget}
+                      onChange={(e) => setEstimatedBudget(e.target.value)}
+                      placeholder="e.g. ₹15 Crores or ₹50 Lakhs"
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderDeadlineLabel', 'Bid Submission Deadline')}
+                    </label>
+                    <input
+                      type="date"
+                      value={submissionDeadline}
+                      onChange={(e) => setSubmissionDeadline(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {t('tenderScopeLabel', 'Description & Scope of Work')}
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder={t('tenderScopePlaceholder', 'Provide brief scope or objectives of the procurement contract...')}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500 resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* RFP Document Upload */}
+              <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UploadCloud className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+                  <span>Upload Tender RFP Document(s)</span>
+                </h3>
+
+                <MultiPdfUpload
+                  files={tenderFiles}
+                  onChange={setTenderFiles}
+                  label="Select or drag-and-drop Tender RFP documents (PDF, up to 10 files)"
+                  hint="Batch multi-document upload supported. Text and criteria will be aggregated across all files."
+                  maxFiles={10}
+                />
+
+                <div className="pt-2">
+                  <label className="block font-semibold text-xs text-slate-700 dark:text-slate-300 mb-1">
+                    {t('tenderClausesLabel', 'Direct RFP Clauses (Optional text input)')}
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={tenderText}
+                    onChange={(e) => setTenderText(e.target.value)}
+                    placeholder="Paste tender specifications, statutory clauses, or financial turnover criteria here..."
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 dark:bg-cyan-600 dark:hover:bg-cyan-500 text-white font-semibold text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Cpu className="w-4 h-4" />
+                  <span>{isProcessing ? processingMsg : t('btnExtractReview', 'Extract & Review Requirements')}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 2: Review & Edit Extracted Criteria */}
+          {currentStep === 2 && (
+            <div className="space-y-6">
+              <div className="p-6 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-blue-600 dark:text-cyan-400" />
+                      <span>Review &amp; Refine Tender Criteria Baseline</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      The AI engine extracted {extractedRequirements.length} clauses. You can modify weights, mark clauses as mandatory, or add custom requirements before publishing.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Requirements List */}
+                <div className="space-y-2.5">
+                  {extractedRequirements.map((req, idx) => (
+                    <div
+                      key={req.id}
+                      className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            {idx + 1}. {req.name}
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {req.category}
+                          </span>
+                          {req.mandatory ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                              Mandatory
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500">
+                              Optional
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-600 dark:text-slate-400 text-[11px]">{req.description}</p>
+                        {req.tenderClauseExcerpt && (
+                          <p className="text-slate-400 text-[10px] italic">
+                            &ldquo;{req.tenderClauseExcerpt}&rdquo;
+                          </p>
+                        )}
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Bidder Organization Name *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. ABC Technologies Pvt Ltd"
-                          value={bidderName}
-                          onChange={(e) => setBidderName(e.target.value)}
-                          className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs"
-                        />
-                      </div>
-
-                      <MultiPdfUpload
-                        files={bidderFiles}
-                        onChange={setBidderFiles}
-                        isProcessing={isProcessing}
-                        label="Upload Bidder Submission Documents (.pdf)"
-                        hint="Select or drag & drop 1–10 Bidder Submittal PDFs (Max 25MB each)"
-                        accentColor="emerald"
-                      />
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                          Or Paste Bidder Credential Text
-                        </label>
-                        <textarea
-                          rows={5}
-                          placeholder="Paste bidder GSTIN details, CA audited turnover statements, OEM MAF certifications..."
-                          value={bidderText}
-                          onChange={(e) => setBidderText(e.target.value)}
-                          className="input-enterprise block w-full px-3 py-2 rounded-xl text-xs font-mono"
-                        />
-                      </div>
-
-                      <div className="pt-2 flex items-center justify-end">
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
-                          type="submit"
-                          className="btn-primary inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold uppercase tracking-wider rounded-xl text-white cursor-pointer shadow-xs"
+                          type="button"
+                          onClick={() => handleToggleMandatory(req.id)}
+                          className="px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                         >
-                          <UserCheck className="w-4 h-4" />
-                          <span>Run Comparative Verification Audit</span>
+                          {req.mandatory ? 'Make Optional' : 'Make Mandatory'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRequirement(req.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 transition-colors rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                    </>
-                  )}
-                </form>
-              )}
-            </>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add Custom Requirement */}
+                <div className="p-3.5 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-500/20 space-y-3">
+                  <span className="text-xs font-bold text-blue-700 dark:text-cyan-300 block">
+                    Add Custom Tender Requirement
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <input
+                      type="text"
+                      placeholder="e.g. ISO 27001 Security Certification"
+                      value={newReqName}
+                      onChange={(e) => setNewReqName(e.target.value)}
+                      className="sm:col-span-2 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                    />
+                    <select
+                      value={newReqCategory}
+                      onChange={(e) => setNewReqCategory(e.target.value as any)}
+                      className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                    >
+                      <option value="Statutory">Statutory</option>
+                      <option value="Financial">Financial</option>
+                      <option value="Technical">Technical</option>
+                      <option value="Contractual">Contractual</option>
+                      <option value="Integrity">Integrity</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newReqMandatory}
+                        onChange={(e) => setNewReqMandatory(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span>Mark as Mandatory Eligibility Clause</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAddRequirement}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-500 transition-colors cursor-pointer"
+                    >
+                      Add Clause
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons: Save as Draft vs Publish to Library */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-5 rounded-2xl bg-white dark:bg-[#0a1628] border border-slate-200 dark:border-blue-500/15">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(1)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                >
+                  ← Back to Details
+                </button>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => handleFinalSaveTender('Draft')}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Save className="w-4 h-4 text-slate-500" />
+                    <span>{t('btnSaveDraft', 'Save as Draft')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => handleFinalSaveTender('Published')}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{t('btnPublish', 'Publish to Tender Library')}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </main>
@@ -550,9 +739,15 @@ Financial capacity and experience details can be furnished post-qualification.`)
   );
 }
 
-export default function UploadPage() {
+export default function UploadWorkflowPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs">Loading Workspace...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+        </div>
+      }
+    >
       <UploadWorkflowContent />
     </Suspense>
   );

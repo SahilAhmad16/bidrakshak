@@ -61,6 +61,31 @@ export default function VerificationReportPage({
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
+  const [reVerifying, setReVerifying] = useState(false);
+
+  const handleReVerify = async () => {
+    if (!report?.applicationId) return;
+    setReVerifying(true);
+    try {
+      const res = await fetch(`/api/applications/${report.applicationId}/verify`, { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.verification?.id) {
+          router.push(`/verifications/${data.verification.id}`);
+          router.refresh();
+        } else {
+          window.location.reload();
+        }
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to re-verify application.');
+      }
+    } catch {
+      alert('Error communicating with verification service.');
+    } finally {
+      setReVerifying(false);
+    }
+  };
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -200,6 +225,21 @@ export default function VerificationReportPage({
             {t('statusMissing', 'Missing Evidence')}
           </span>
         );
+      case 'Unverified':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25">
+            <AlertCircle className="w-3 h-3" />
+            {t('statusUnverified', 'Unverified')}
+          </span>
+        );
+      case 'Pending Verification':
+      case 'Unable to Verify':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/25">
+            <Clock className="w-3 h-3" />
+            {t('statusPendingVerification', 'Pending Verification')}
+          </span>
+        );
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-cyan-400 border border-blue-500/25">
@@ -276,6 +316,19 @@ export default function VerificationReportPage({
             {report.applicationId && (
               <button
                 type="button"
+                onClick={handleReVerify}
+                disabled={reVerifying}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                title="Re-run Verification Audit"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${reVerifying ? 'animate-spin' : ''}`} />
+                <span>{reVerifying ? 'Verifying...' : t('btnReVerifyDirect', 'Re-run Verification')}</span>
+              </button>
+            )}
+
+            {report.applicationId && (
+              <button
+                type="button"
                 onClick={() => setDecisionModalOpen(true)}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 dark:bg-cyan-600 dark:hover:bg-cyan-500 rounded-xl transition-all shadow-xs cursor-pointer"
               >
@@ -307,12 +360,15 @@ export default function VerificationReportPage({
                 </span>
               </div>
               {report.applicationId && (
-                <Link
-                  href={`/tenders/${report.tenderId}`}
-                  className="px-3 py-1 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-500 transition-colors"
+                <button
+                  type="button"
+                  onClick={handleReVerify}
+                  disabled={reVerifying}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-500 transition-colors inline-flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                 >
-                  Go to Re-verify
-                </Link>
+                  <RefreshCw className={`w-3 h-3 ${reVerifying ? 'animate-spin' : ''}`} />
+                  <span>{reVerifying ? 'Verifying...' : t('btnReVerifyDirect', 'Re-run Verification')}</span>
+                </button>
               )}
             </div>
           )}
@@ -464,7 +520,8 @@ export default function VerificationReportPage({
                     <th className="pb-3 px-3">{t('colRequirement', 'Tender Requirement')}</th>
                     <th className="pb-3 px-3">{t('colCategory', 'Category')}</th>
                     <th className="pb-3 px-3">{t('colEvidence', 'Bidder Evidence')}</th>
-                    <th className="pb-3 px-3">{t('colStatus', 'Status')}</th>
+                    <th className="pb-3 px-3">{t('colStatus', 'AI Document Analysis')}</th>
+                    <th className="pb-3 px-3">{t('colOfficialStatus', 'Official Registry Status')}</th>
                     <th className="pb-3 px-3 text-right">{t('colScore', 'Score')}</th>
                   </tr>
                 </thead>
@@ -503,6 +560,27 @@ export default function VerificationReportPage({
                       </td>
                       <td className="py-3 px-3 align-top whitespace-nowrap">
                         {getStatusBadge(item.status)}
+                      </td>
+                      <td className="py-3 px-3 align-top whitespace-nowrap">
+                        {item.officialVerificationStatus === 'Verified' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+                            <CheckCircle2 className="w-3 h-3" />
+                            {t('officialRegistryVerified', 'Officially Verified')}
+                          </span>
+                        ) : item.officialVerificationStatus === 'Unverified' || item.status === 'Missing' || item.status === 'Non-Compliant' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25">
+                            <AlertCircle className="w-3 h-3" />
+                            {t('officialRegistryUnverified', 'Unverified')}
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/25"
+                            title="Direct API connection with Government portal pending"
+                          >
+                            <Clock className="w-3 h-3" />
+                            {t('officialRegistryPending', 'Pending Verification')}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3 align-top text-right font-bold text-slate-800 dark:text-slate-200">
                         {item.scoreAwarded} / {item.weight}

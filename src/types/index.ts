@@ -9,6 +9,8 @@ export type VerificationStatus =
   | 'Mismatch Detected'
   | 'Unable to Verify'
   | 'Verified'
+  | 'Unverified'
+  | 'Pending Verification'
   | 'Failed';
 
 export type TenderStatus = 'Draft' | 'Published' | 'Closed' | 'Completed' | 'Processing' | 'Failed';
@@ -51,6 +53,8 @@ export interface RequirementComparisonItem {
   sourceDocument?: string;
   extractedValue?: string;
   isAuthenticityVerified?: boolean;
+  officialVerificationStatus?: 'Verified' | 'Unverified' | 'Pending Verification';
+  officialVerificationSource?: string;
 }
 
 export interface VerificationFeedback {

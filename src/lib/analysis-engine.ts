@@ -552,6 +552,15 @@ export function compareBidderAgainstTender(
 
     earnedScore += scoreAwarded;
 
+    // Explicitly distinguish AI document parsing from live official registry verification
+    const isAiCompliant = status === 'Compliant' && !extractedData?.isMismatch;
+    const officialVerificationStatus: 'Verified' | 'Unverified' | 'Pending Verification' = isAiCompliant
+      ? 'Pending Verification'
+      : 'Unverified';
+    const officialVerificationSource = isAiCompliant
+      ? 'AI Document Scan Complete • Official Portal Lookup Pending'
+      : 'Unverified • External Registry Check Pending';
+
     comparisonResults.push({
       id: `cmp_${req.id}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       requirementId: req.id,
@@ -565,7 +574,9 @@ export function compareBidderAgainstTender(
       pageReference,
       sourceDocument: primaryDocName,
       extractedValue,
-      isAuthenticityVerified: status === 'Compliant' && !extractedData?.isMismatch,
+      isAuthenticityVerified: false, // AI document analysis only; official government source authentication is pending
+      officialVerificationStatus,
+      officialVerificationSource,
     });
   }
 
@@ -591,7 +602,7 @@ export function compareBidderAgainstTender(
     aiSummary = `Comparative audit of bidder "${bidderName}" against tender "${tender.title}" indicates critical non-compliance (${complianceScore}/100, HIGH RISK, Risk Score: ${riskScore}/100). The bidder failed, omitted, or presented deficient evidence for ${nonCompliantRequirements.length} mandatory tender clauses (${nonCompliantRequirements.slice(0, 3).join(', ')}). Proceeding with this submission poses significant procurement, legal, or delivery risk. Disqualification recommended unless rectified during technical review.`;
   }
 
-  const authenticityStatement = `Authenticity Note: Text extraction and credential structure analysis were performed on ${documents?.length || 1} submitted document(s). External registry verification (GSTN, MCA21, CBDT, Udyam) is based on autonomous document syntax validation; final verification authority remains with the designated Procurement Officer.`;
+  const authenticityStatement = `Official Verification Status Notice: All findings are derived from AI document analysis and OCR pattern recognition. Direct third-party verification against official government databases (e.g. GST Portal, MCA RoC, Income Tax Portal) remains Pending Verification / Unverified until external registry APIs or procurement officer physical sign-offs are completed.`;
 
   const scoringMethodology = `Tender-specific weighted scoring algorithm. Mandatory statutory, financial, technical, and integrity clauses evaluated on 100-point normalized scale. Mandatory failures trigger automatic Critical Risk flag.`;
 
